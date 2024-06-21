@@ -1,5 +1,5 @@
 [workspace]
-members = ["sm83"]
+members = ["sm83", "sm83/tester"]
 
 [package]
 name = "gamewaifu"
@@ -8,3 +8,6 @@ edition = "2021"
 
 [dependencies]
 sm83 = { version = "0.1.0", path = "sm83" }
+
+[profile.dev]
+overflow-checks = false

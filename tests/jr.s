@@ -1,9 +1,13 @@
 SECTION "code", ROM0
 
+    total_tests 2
+
 jr_pos:
+    ld a, 0
+
     jr :+
     ld a, 1
-:   ld [0], a
+:   ld [RESULT], a
 
 jr_neg:
     jr .a
@@ -13,7 +17,6 @@ jr_neg:
     jr :-
     ld a, 2
 .b
-    ld [0], a
+    ld [RESULT], a
 
-done:
-    halt
+    done
