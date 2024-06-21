@@ -2,8 +2,8 @@ use crate::*;
 use core::fmt;
 use core::ops::*;
 
-pub struct Sm83<'a> {
-    bus: &'a mut dyn bus::Bus,
+pub struct Sm83<Bus: bus::Bus> {
+    pub bus: Bus,
 
     regs: [u8; 8], // ordering according to constants to speedup lookup time
     sp: u16,
@@ -13,6 +13,9 @@ pub struct Sm83<'a> {
 
     cycles: usize,
     after_ei: bool,
+
+    int_ie: u8,
+    int_if: u8,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -100,20 +103,23 @@ macro_rules! setfr {
 }
 
 
-impl<'a> Sm83<'a> {
-    pub fn new(bus: &'a mut dyn bus::Bus) -> Self {
+impl<B: bus::Bus> Sm83<B> {
+    pub fn new(bus: B) -> Self {
         Self {
             bus,
 
             ir: 0,
 
             regs: [0; 8],
-            sp: 0,
-            pc: 0,
+            sp: 0xfffe,
+            pc: 0x0100,
             ime: false,
 
             cycles: 0,
             after_ei: false,
+
+            int_ie: 0,
+            int_if: 0,
         }
     }
 
@@ -576,6 +582,17 @@ impl<'a> Sm83<'a> {
 
     fn load_bus_u8(&mut self, a: u16) -> u8 {
         self.incr_cycles(1);
+
+        #[cfg(not(feature = "test"))]
+        if a == 0xffff {
+            self.int_ie
+        } else if a == 0xff0f {
+            self.int_if
+        } else {
+            self.bus.load(a)
+        }
+
+        #[cfg(feature = "test")]
         self.bus.load(a)
     }
 
@@ -587,7 +604,18 @@ impl<'a> Sm83<'a> {
 
     fn store_bus_u8(&mut self, a: u16, d: u8) {
         self.incr_cycles(1);
-        self.bus.store(a, d)
+
+        #[cfg(not(feature = "test"))]
+        if a == 0xffff {
+            self.int_ie = d;
+        } else if a == 0xff0f {
+            self.int_if = d;
+        } else {
+            self.bus.store(a, d);
+        }
+
+        #[cfg(feature = "test")]
+        self.bus.store(a, d);
     }
 
     fn store_bus_u16(&mut self, a: u16, d: u16) {
