@@ -1,36 +1,33 @@
-use std::{sync::{atomic::*, Arc, Mutex}, thread::sleep};
+use std::{sync::{atomic::*, *}, thread};
 
-use raylib::{ffi::Vector2, prelude::*};
-
-mod gb;
-
+#[cfg(feature = "raylib")]
 fn main() {
+    use raylib::{ffi::Vector2, prelude::*};
+
     let rom = std::env::args().nth(1).unwrap();
     let rom = std::fs::read(rom).unwrap();
-
-    let ppu = ppu::Ppu::new();
-    let bus = Arc::new(Mutex::new(gb::bus::Bus {
-        ppu,
-        mapper: gb::mapper::Mapper {
-            rom,
-            ram: Vec::new(),
-        },
-        wram: [0; 0x2000],
-        hram: [0; 0x7f],
-    }));
-    let cpu = sm83::Sm83::new(bus);
 
     let (mut rl, thread) = raylib::init()
         .size(640, 570)
         .title("Gamewaifu")
         .build();
 
-    let mut gb_fb = vec![0; 160 * 144];
+    let mut gb_fb = Vec::with_capacity(160 * 144);
+    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
+    let gb_fb: Arc<_> = gb_fb.into();
+
     let mut fb = vec![0; 160 * 144 * 4];
     let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
 
-    GB_FB.store(gb_fb.as_mut_ptr(), Ordering::Relaxed);
-    std::thread::spawn(|| run_emu(cpu));
+    {
+        let gb_fb = Arc::clone(&gb_fb);
+        thread::spawn(move || {
+            let rom = rom;
+            let mapper = gb::mapper::Mapper::from_bin(&rom);
+            let gb = gb::Gameboy::new(mapper);
+            run_emu(gb, gb_fb);
+        });
+    }
 
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&thread);
@@ -42,52 +39,84 @@ fn main() {
         d.draw_texture_ex(&rl_fb, Vector2 { x: 0.0, y: 0.0 }, 0.0, 4.0, Color::WHITE);
         d.draw_fps(0, 0);
     }
+
+    const PALETTE: [u32; 4] = [
+        0xf5faefff,
+        0x86c270ff,
+        0x2f6957ff,
+        0x0b1920ff,
+    ];
+
+    fn convert(gb_fb: &[u8], fb: &mut [u8]) {
+        for (i, c) in gb_fb.iter().enumerate() {
+            let c = PALETTE[*c as usize];
+            let c = c.to_be_bytes();
+            let (_, r) = fb.split_at_mut(i * 4);
+            let (l, _) = r.split_at_mut(4);
+            l.copy_from_slice(&c);
+        }
+    }
 }
 
-static GB_FB: AtomicPtr<u8> = AtomicPtr::new(::core::ptr::null_mut());
+#[cfg(not(feature = "raylib"))]
+fn main() {
+    let rom = std::env::args().nth(1).unwrap();
+    let rom = std::fs::read(rom).unwrap();
 
-fn run_emu(mut cpu: sm83::Sm83<Arc<Mutex<gb::bus::Bus>>>) {
+    let mut gb_fb = Vec::with_capacity(160 * 144);
+    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
+    let gb_fb: Arc<_> = gb_fb.into();
+
+    {
+        let gb_fb = Arc::clone(&gb_fb);
+        thread::spawn(move || {
+            let rom = rom;
+            let mapper = gb::mapper::Mapper::from_bin(&rom);
+            let gb = gb::Gameboy::new(mapper);
+            run_emu(gb, gb_fb);
+        });
+    }
+
+    eprintln!("\x1b[?25l\x1b[?1049h\x1b[2J\x1b[97m");
+    thread::sleep_ms(100);
+
+    loop {
+        eprint!("\x1b[2K\x1b[H");
+        const MX: usize = 2;
+        const MY: usize = MX * 2;
+
+        for my in 0..144 / MY {
+            for mx in 0..160 / MX {
+                let x = mx * MX;
+                let y = my * MY;
+                let mut v = 0;
+
+                for sy in 0..MY {
+                    for sx in 0..MX {
+                        v += gb_fb[(y + sy) * 160 + x + sx].load(Ordering::Relaxed) as usize;
+                    }
+                }
+
+                let c = CHARS[(v + (MX * MY / 2)) / (MX * MY)];
+                eprint!("{}", c.to_string().repeat((MX * 2) / MY));
+            }
+
+            eprintln!();
+        }
+    }
+
+    const CHARS: [char; 4] = ['█', '▓', '░', ' '];
+}
+
+fn run_emu(mut gb: gb::Gameboy, gb_fb: Arc<[AtomicU8]>) {
     use std::time::*;
-
-    let gb_fb = unsafe {
-        let gb_fb = GB_FB.load(Ordering::Relaxed);
-        ::core::slice::from_raw_parts_mut(gb_fb, 160 * 144)
-    };
-
-    let mut hsync = 0; // count to 456
-    let mut scanline = 0;
 
     loop {
         let start = Instant::now();
 
-        cpu.step();
-
-        if hsync >= 456 {
-            cpu.bus.lock().unwrap().ppu.render_strip(gb_fb, 0);
-            hsync = 0;
-            scanline = (scanline + 1) % 153;
-        }
-
-        hsync += 1;
+        gb.step(&gb_fb);
 
         let dur = start.elapsed().saturating_sub(Duration::from_secs_f64(1e6 / 4.194304));
-        sleep(dur);
-    }
-}
-
-const PALETTE: [u32; 4] = [
-    0xf5faefff,
-    0x86c270ff,
-    0x2f6957ff,
-    0x0b1920ff,
-];
-
-fn convert(gb_fb: &[u8], fb: &mut [u8]) {
-    for (i, c) in gb_fb.iter().enumerate() {
-        let c = PALETTE[*c as usize];
-        let c = c.to_be_bytes();
-        let (_, r) = fb.split_at_mut(i * 4);
-        let (l, _) = r.split_at_mut(4);
-        l.copy_from_slice(&c);
+        thread::sleep(dur);
     }
 }

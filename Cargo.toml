@@ -1,5 +1,5 @@
 [workspace]
-members = [ "ppu","sm83", "sm83/tester"]
+members = ["gb", "sm83", "sm83/tester"]
 
 [package]
 name = "gamewaifu"
@@ -7,9 +7,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ppu = { version = "0.1.0", path = "ppu" }
-sm83 = { version = "0.1.0", path = "sm83" }
-raylib = "5.0.1"
+gb = { path = "gb" }
+sm83 = { path = "sm83" }
+raylib = { version = "5.0.1", optional = true }
 
 [profile.dev]
 overflow-checks = false
+
+[features]
+raylib = ["dep:raylib"]

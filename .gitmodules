@@ -1,3 +1,6 @@
 [submodule "sm83/tester/GameboyCPUTests"]
 	path = sm83/tester/GameboyCPUTests
 	url = git@github.com:adtennant/GameboyCPUTests
+[submodule "gb-test-roms"]
+	path = gb-test-roms
+	url = git@github.com:retrio/gb-test-roms

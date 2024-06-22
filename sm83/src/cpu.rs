@@ -30,6 +30,7 @@ pub struct State {
     pub l: u8,
     pub pc: u16,
     pub sp: u16,
+    pub ir: u8,
 }
 
 impl fmt::Display for State {
@@ -135,6 +136,7 @@ impl<B: bus::Bus> Sm83<B> {
 
         self.pc = s.pc;
         self.sp = s.sp;
+        self.ir = s.ir;
     }
 
     pub fn get_state(&self) -> State {
@@ -150,6 +152,7 @@ impl<B: bus::Bus> Sm83<B> {
 
             pc: self.pc,
             sp: self.sp,
+            ir: self.ir,
         }
     }
 
@@ -268,8 +271,8 @@ impl<B: bus::Bus> Sm83<B> {
                 setf!(n 0, h 0, c !self.get_flag(FC));
             },
             (1, 6, 6, _, _) => { // halt
-                self.ir = self.load_bus_u8(self.pc);
                 self.check_interrupts();
+                self.ir = self.load_bus_u8(self.pc);
                 return; // some funny quirk
             },
             (1, _, _, _, _) => { // ld r8, r8
@@ -398,13 +401,13 @@ impl<B: bus::Bus> Sm83<B> {
                 self.call(y as u16 * 8);
             },
             _ => {
-                println!("inv {x} {y} {z}");
+                println!("inv {x} {y} {z} @ {:04x}", self.pc);
                 return; // inv opc never fetch
             },
         }
 
-        self.ir = self.fetch_u8();
         self.check_interrupts();
+        self.ir = self.fetch_u8();
     }
 
     fn execute_cb(&mut self) {
@@ -481,6 +484,21 @@ impl<B: bus::Bus> Sm83<B> {
     }
 
     fn check_interrupts(&mut self) {
+        if !self.ime { return; }
+
+        let i = self.int_if & self.int_ie;
+        for b in 0..8 {
+            if (i >> b) & 1 != 0 {
+                self.int_if ^= 1 << b;
+                self.ime = false;
+                self.call(0x40 + b * 8);
+                return;
+            }
+        }
+    }
+
+    pub fn interrupt(&mut self, i: u8) {
+        self.int_if |= 1 << i;
     }
 
     fn incr_cycles(&mut self, t: usize) {

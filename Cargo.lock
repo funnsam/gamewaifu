@@ -153,8 +153,15 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 name = "gamewaifu"
 version = "0.1.0"
 dependencies = [
- "ppu",
+ "gb",
  "raylib",
+ "sm83",
+]
+
+[[package]]
+name = "gb"
+version = "0.1.0"
+dependencies = [
  "sm83",
 ]
 
@@ -316,10 +323,6 @@ dependencies = [
  "smallvec",
  "windows-targets",
 ]
-
-[[package]]
-name = "ppu"
-version = "0.1.0"
 
 [[package]]
 name = "prettyplease"
