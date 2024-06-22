@@ -77,12 +77,11 @@ fn main() {
         });
     }
 
-    eprintln!("\x1b[?25l\x1b[?1049h\x1b[2J\x1b[97m");
-    thread::sleep_ms(100);
+    println!("\x1b[?25l\x1b[?1049h\x1b[2J\x1b[97m");
 
     loop {
-        eprint!("\x1b[2K\x1b[H");
-        const MX: usize = 2;
+        print!("\x1b[2K\x1b[H");
+        const MX: usize = 1;
         const MY: usize = MX * 2;
 
         for my in 0..144 / MY {
@@ -98,10 +97,10 @@ fn main() {
                 }
 
                 let c = CHARS[(v + (MX * MY / 2)) / (MX * MY)];
-                eprint!("{}", c.to_string().repeat((MX * 2) / MY));
+                print!("{}", c.to_string().repeat((MX * 2) / MY));
             }
 
-            eprintln!();
+            println!();
         }
     }
 

@@ -10,6 +10,7 @@ pub struct Ppu {
     pub(crate) scroll: (u8, u8),
     pub(crate) window: (u8, u8),
     pub(crate) lcdc: u8,
+    pub(crate) obp: [u8; 2],
 
     stat: u8,
     wly: u8,
@@ -27,6 +28,7 @@ impl Ppu {
             scroll: (0, 0),
             window: (0, 0),
             lcdc: 0x80,
+            obp: [0; 2],
 
             stat: 0,
             wly: 0,
@@ -50,9 +52,19 @@ impl Ppu {
             return None;
         }
 
-        if self.lcdc & 1 != 0 { // bg & window enable
-            let mut buf = [0; 2];
+        let mut strip_bg = [0; 160];
+        let mut strip_ob = [(0, false); 160];
+        let mut buf = [0; 2];
 
+        let mut plot_bg = |x: usize, c: u8| if x < 144 {
+            strip_bg[x] = (self.bgp >> (c * 2)) & 3;
+        };
+
+        let mut plot_ob = |x: usize, c: u8, pr: bool, p: u8| if x < 144 && strip_ob[x].0 == 0 {
+            strip_ob[x] = ((p >> (c * 2)) & 3, pr);
+        };
+
+        if self.lcdc & 1 != 0 { // bg & window enable
             let ty = (y + self.scroll.1) as usize / 8;
             let iy = (y + self.scroll.1) as usize % 8;
 
@@ -80,7 +92,7 @@ impl Ppu {
                     let x = sx * 8;
                     let kb = 7 - k;
                     let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
-                    self.plot(fb, (x + k - xo) as _, y as _, c, self.bgp);
+                    plot_bg((x + k - xo) as _, c);
                 }
             }
 
@@ -102,37 +114,69 @@ impl Ppu {
                         let x = tx * 8 + self.window.0 as usize - 7;
                         let kb = 7 - k;
                         let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
-                        self.plot(fb, (x + k) as _, y as _, c, self.bgp);
+                        plot_bg((x + k) as _, c);
                     }
                 }
 
                 self.wly += 1;
             }
-        } else {
-            for x in 0..160 {
-                self.plot(fb, x, y as _, 0, self.bgp);
-            }
         }
 
         if self.lcdc & 2 != 0 {
             let long = self.lcdc & 4 != 0;
+            let height = if long { 16 } else { 8 };
+            let t_mask = !(long as u8);
+
+            let mut objs = [(0, 0, 0, 0); 10];
+            let mut objc = 0;
 
             for o in 0..40 {
                 let obj = &self.oam[o * 4..o * 4 + 4];
                 let oy = obj[0] - 16;
-                let ox = obj[1];
-                let ti = obj[2];
-                let fl = obj[3];
+
+                if (oy..oy + height).contains(&y) {
+                    objs[objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().try_into().unwrap();
+                    objc += 1;
+                    if objc >= 10 { break; }
+                }
+            }
+
+            let objs = &mut objs[..objc];
+            objs.sort_by_key(|o| o.1);
+
+            for o in objs.iter() {
+                let x = o.1 - 8;
+                let iy = if o.3 & 0x40 != 0 { height - y + o.0 - 17 } else { y - o.0 + 16 };
+
+                let p = self.obp[(o.3 >> 4) as usize & 1];
+
+                let (_, r) = self.vram.split_at((o.2 & t_mask) as usize * 16 + iy as usize * 2);
+                let (r, _) = r.split_at(2);
+                buf.copy_from_slice(r);
+
+                for k in 0..8 {
+                    let kb = if o.3 & 0x20 != 0 { k } else { 7 - k };
+                    let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
+
+                    if c != 0 {
+                        plot_ob((x + k) as _, c, o.3 & 0x80 != 0, p);
+                    }
+                }
             }
         }
 
-        (self.ly == self.lyc && self.stat & 0x40 != 0).then_some(1)
-    }
-
-    fn plot(&mut self, fb: &[AtomicU8], x: usize, y: usize, c: u8, p: u8) {
-        if x < 160 && y < 144 {
-            fb[y * 160 + x].store((p >> (c * 2)) & 3, Ordering::Relaxed);
+        for (x, (b, (o, pr))) in strip_bg.into_iter().zip(strip_ob).enumerate() {
+            fb[y as usize * 160 + x].store(
+                if o == 0 || (pr && b != 0) { b } else { o },
+                //     (p >> (o * 2)) & 3
+                // } else {
+                //     (self.bgp >> (b * 2)) & 3
+                // },
+                Ordering::Relaxed,
+            );
         }
+
+        (self.ly == self.lyc && self.stat & 0x40 != 0).then_some(1)
     }
 
     pub(crate) fn get_stat(&self) -> u8 {
