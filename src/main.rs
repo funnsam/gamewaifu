@@ -36,8 +36,8 @@ fn main() {
         rl_fb.update_texture(&fb);
 
         d.clear_background(Color::BLACK);
-        d.draw_texture_ex(&rl_fb, Vector2 { x: 0.0, y: 0.0 }, 0.0, 4.0, Color::WHITE);
-        d.draw_fps(0, 0);
+        d.draw_texture_ex(&rl_fb, Vector2 { x: 10.0, y: 10.0 }, 0.0, 3.0, Color::WHITE);
+        // d.draw_fps(0, 0);
     }
 
     const PALETTE: [u32; 4] = [
@@ -47,9 +47,9 @@ fn main() {
         0x0b1920ff,
     ];
 
-    fn convert(gb_fb: &[u8], fb: &mut [u8]) {
+    fn convert(gb_fb: &[AtomicU8], fb: &mut [u8]) {
         for (i, c) in gb_fb.iter().enumerate() {
-            let c = PALETTE[*c as usize];
+            let c = PALETTE[c.load(Ordering::Relaxed) as usize];
             let c = c.to_be_bytes();
             let (_, r) = fb.split_at_mut(i * 4);
             let (l, _) = r.split_at_mut(4);
