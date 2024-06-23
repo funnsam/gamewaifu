@@ -168,10 +168,6 @@ impl Ppu {
         for (x, (b, (o, pr))) in strip_bg.into_iter().zip(strip_ob).enumerate() {
             fb[y as usize * 160 + x].store(
                 if o == 0 || (pr && b != 0) { b } else { o },
-                //     (p >> (o * 2)) & 3
-                // } else {
-                //     (self.bgp >> (b * 2)) & 3
-                // },
                 Ordering::Relaxed,
             );
         }

@@ -1,6 +1,6 @@
-pub struct Bus<'a> {
+pub struct Bus {
     pub ppu: crate::ppu::Ppu,
-    pub mapper: crate::mapper::Mapper<'a>,
+    pub mapper: crate::mapper::Mapper,
     pub wram: [u8; 0x2000],
     pub hram: [u8; 0x7f],
 
@@ -9,10 +9,13 @@ pub struct Bus<'a> {
     pub(crate) tima: u8,
     pub(crate) tma: u8,
     pub(crate) tac: u8,
+
+    pub keys: u8,
+    key_sel: u8,
 }
 
-impl<'a> Bus<'a> {
-    pub fn new(ppu: crate::ppu::Ppu, mapper: crate::mapper::Mapper<'a>) -> Self {
+impl Bus {
+    pub fn new(ppu: crate::ppu::Ppu, mapper: crate::mapper::Mapper) -> Self {
         Self {
             ppu,
             mapper,
@@ -24,11 +27,14 @@ impl<'a> Bus<'a> {
             tima: 1,
             tma: 0,
             tac: 0,
+
+            keys: 0xff,
+            key_sel: 0,
         }
     }
 }
 
-impl sm83::bus::Bus for Bus<'_> {
+impl sm83::bus::Bus for Bus {
     fn load(&mut self, a: u16) -> u8 {
         match a {
             0x0000..=0x7fff => self.mapper.load(a),
@@ -38,7 +44,11 @@ impl sm83::bus::Bus for Bus<'_> {
             0xe000..=0xfdff => self.wram[a as usize - 0xe000],
             0xfe00..=0xfe9f => self.ppu.oam[a as usize - 0xfe00],
             0xfea0..=0xfeff => 0xff,
-            0xff00 => 0x0f,
+            0xff00 => {
+                let dp = if self.key_sel & 0x10 == 0 { self.keys & 0xf } else { 0 };
+                let sl = if self.key_sel & 0x20 == 0 { self.keys >> 4 } else { 0 };
+                self.key_sel | dp | sl
+            },
             0xff05 => self.tima,
             0xff06 => self.tma,
             0xff07 => self.tac,
@@ -68,6 +78,7 @@ impl sm83::bus::Bus for Bus<'_> {
             0xe000..=0xfdff => self.wram[a as usize - 0xe000] = d,
             0xfe00..=0xfe9f => self.ppu.oam[a as usize - 0xfe00] = d,
             0xfea0..=0xfeff => {},
+            0xff00 => self.key_sel = d & 0x30,
             0xff05 => self.tima = d,
             0xff06 => self.tma = d,
             0xff07 => self.tac = d & 7,

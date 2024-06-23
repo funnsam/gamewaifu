@@ -10,6 +10,8 @@ fn main() {
     let (mut rl, thread) = raylib::init()
         .size(640, 570)
         .title("Gamewaifu")
+        .resizable()
+        .vsync()
         .build();
 
     let mut gb_fb = Vec::with_capacity(160 * 144);
@@ -19,25 +21,52 @@ fn main() {
     let mut fb = vec![0; 160 * 144 * 4];
     let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
 
+    let mapper = gb::mapper::Mapper::from_bin(&rom);
+    let keys = Arc::new(AtomicU8::new(0xff));
+    let gb = gb::Gameboy::new(mapper, Arc::clone(&keys));
+
     {
         let gb_fb = Arc::clone(&gb_fb);
         thread::spawn(move || {
-            let rom = rom;
-            let mapper = gb::mapper::Mapper::from_bin(&rom);
-            let gb = gb::Gameboy::new(mapper);
             run_emu(gb, gb_fb);
         });
     }
 
     while !rl.window_should_close() {
-        let mut d = rl.begin_drawing(&thread);
+        {
+            let mut d = rl.begin_drawing(&thread);
 
-        convert(&gb_fb, &mut fb);
-        rl_fb.update_texture(&fb);
+            convert(&gb_fb, &mut fb);
+            rl_fb.update_texture(&fb);
 
-        d.clear_background(Color::BLACK);
-        d.draw_texture_ex(&rl_fb, Vector2 { x: 10.0, y: 10.0 }, 0.0, 3.0, Color::WHITE);
-        // d.draw_fps(0, 0);
+            d.clear_background(Color::from_hex("0b1920").unwrap());
+
+            let scale = (d.get_screen_width() as f32 / 160.0).min(d.get_screen_height() as f32 / 144.0).floor();
+            let x = (d.get_screen_width() as f32 - scale * 160.0) / 2.0;
+            let y = (d.get_screen_height() as f32 - scale * 144.0) / 2.0;
+
+            d.draw_texture_ex(&rl_fb, Vector2 { x, y }, 0.0, scale, Color::WHITE);
+
+            let fps = d.get_fps();
+            d.draw_text(&format!("Display FPS {fps}   Scale {scale}"), 0, 0, 20, Color::WHITE);
+        }
+
+        let du = !rl.is_key_down(KeyboardKey::KEY_W) as u8;
+        let dd = !rl.is_key_down(KeyboardKey::KEY_S) as u8;
+        let dl = !rl.is_key_down(KeyboardKey::KEY_A) as u8;
+        let dr = !rl.is_key_down(KeyboardKey::KEY_D) as u8;
+        let sa = !rl.is_key_down(KeyboardKey::KEY_I) as u8;
+        let sb = !rl.is_key_down(KeyboardKey::KEY_O) as u8;
+        let sl = !rl.is_key_down(KeyboardKey::KEY_V) as u8;
+        let st = !rl.is_key_down(KeyboardKey::KEY_B) as u8;
+
+        keys.store(
+            dr | (dl << 1) | (du << 2) | (dd << 3)
+               | (sa << 4) | (sb << 5) | (sl << 6) | (st << 7),
+            Ordering::Relaxed
+        );
+
+        BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
     }
 
     const PALETTE: [u32; 4] = [
@@ -67,12 +96,13 @@ fn main() {
     for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
     let gb_fb: Arc<_> = gb_fb.into();
 
+    let rom = rom;
+    let mapper = gb::mapper::Mapper::from_bin(&rom);
+    let gb = gb::Gameboy::new(mapper, Arc::new(AtomicU8::new(0xff)));
+
     {
         let gb_fb = Arc::clone(&gb_fb);
         thread::spawn(move || {
-            let rom = rom;
-            let mapper = gb::mapper::Mapper::from_bin(&rom);
-            let gb = gb::Gameboy::new(mapper);
             run_emu(gb, gb_fb);
         });
     }
@@ -138,19 +168,31 @@ fn main() {
         ["\x1b[107m", "\x1b[97;47m", "\x1b[97;100m", "\x1b[97;40m"],
         ["\x1b[97;47m", "\x1b[47m", "\x1b[37;100m", "\x1b[37;40m"],
         ["\x1b[97;100m", "\x1b[37;100m", "\x1b[100m", "\x1b[40;90m"],
-        ["\x1b[97;40m", "\x1b[37;40m", "\x1b[90;40m", "\x1b[0m"],
+        ["\x1b[97;40m", "\x1b[37;40m", "\x1b[90;40m", "\x1b[40m"],
     ];
 }
+
+static BURST: AtomicBool = AtomicBool::new(false);
 
 fn run_emu(mut gb: gb::Gameboy, gb_fb: Arc<[AtomicU8]>) {
     use std::time::*;
 
-    loop {
-        let start = Instant::now();
+    let mut start = Instant::now();
+    let mut dur = Duration::new(0, 0);
 
+    loop {
         gb.step(&gb_fb);
 
-        let dur = start.elapsed().saturating_sub(Duration::from_secs_f64(1e6 / 4.194304));
-        thread::sleep(dur);
+        if !BURST.load(Ordering::Relaxed) {
+            dur += Duration::from_secs_f64(1.0 / 4194304.0);
+            dur = dur.saturating_sub(start.elapsed());
+
+            if dur.as_millis() > 10 {
+                thread::sleep(dur);
+                dur = Duration::new(0, 0);
+            }
+        }
+
+        start = Instant::now();
     }
 }

@@ -1,19 +1,21 @@
-use core::sync::atomic::*;
+use std::sync::{atomic::*, *};
 use sm83::bus::Bus;
 
 pub mod bus;
 pub mod mapper;
 pub mod ppu;
 
-pub struct Gameboy<'a> {
-    pub cpu: sm83::Sm83<bus::Bus<'a>>,
+pub struct Gameboy {
+    pub cpu: sm83::Sm83<bus::Bus>,
 
     hsync: usize,
     timer_prev: bool,
+
+    keys: Arc<AtomicU8>,
 }
 
-impl<'a> Gameboy<'a> {
-    pub fn new(mapper: mapper::Mapper<'a>) -> Self {
+impl Gameboy {
+    pub fn new(mapper: mapper::Mapper, keys: Arc<AtomicU8>) -> Self {
         let ppu = ppu::Ppu::new();
         let bus = bus::Bus::new(ppu, mapper);
         let mut cpu = sm83::Sm83::new(bus);
@@ -38,6 +40,8 @@ impl<'a> Gameboy<'a> {
 
             hsync: 0,
             timer_prev: false,
+
+            keys,
         }
     }
 
@@ -77,5 +81,7 @@ impl<'a> Gameboy<'a> {
                 self.cpu.interrupt(2);
             }
         }
+
+        self.cpu.bus.keys = self.keys.load(Ordering::Relaxed);
     }
 }
