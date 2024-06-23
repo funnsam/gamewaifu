@@ -1,7 +1,25 @@
 pub enum Mapper<'a> {
     None {
         rom: &'a [u8],
-        ram: Option<&'a mut [u8]>,
+        ram: Vec<u8>,
+    },
+    Mbc1 {
+        rom: &'a [u8],
+        ram: Vec<u8>,
+
+        ram_en: bool,
+        rom_bk: u8,
+        ram_bk: u8,
+        mode: bool,
+        rom_ext: bool,
+    },
+    Mbc5 {
+        rom: &'a [u8],
+        ram: Vec<u8>,
+
+        ram_en: bool,
+        rom_bk: u16,
+        ram_bk: u8,
     },
 }
 
@@ -38,7 +56,32 @@ impl<'a> Mapper<'a> {
 
                 Mapper::None {
                     rom: bin,
-                    ram: None,
+                    ram: Vec::new(),
+                }
+            },
+            // TODO: more asserts
+            0x01 => { // mbc1
+                Mapper::Mbc1 {
+                    rom: bin,
+                    ram: Vec::new(),
+
+                    ram_en: false,
+                    rom_bk: 0,
+                    ram_bk: 0,
+                    mode: false,
+                    rom_ext: false, // TODO: fat ass rom
+                }
+            },
+            0x02 => todo!(), // mbc1 + ram
+            0x03 => todo!(), // mbc1 + ram + battery
+            0x19 | 0x1a | 0x1b => { // mbc5
+                Mapper::Mbc5 {
+                    rom: bin,
+                    ram: vec![0xff; ram_banks * 8192],
+
+                    ram_en: false,
+                    rom_bk: 1,
+                    ram_bk: 0,
                 }
             },
             m => panic!("unknown mapper {m:02x}"),
@@ -49,13 +92,24 @@ impl<'a> Mapper<'a> {
 impl sm83::bus::Bus for Mapper<'_> {
     fn load(&mut self, a: u16) -> u8 {
         match self {
-            Self::None { rom, ram: Some(ram) } => match a {
-                0x0000..=0x7fff => rom[a as usize],
-                0xa000..=0xbfff => ram[a as usize - 0xa000],
+            Self::None { rom, ram } => match a {
+                0x0000..=0x7fff => rom.get(a as usize).copied().unwrap_or(0xff),
+                0xa000..=0xbfff => ram.get(a as usize - 0xa000).copied().unwrap_or(0xff),
                 _ => 0xff,
             },
-            Self::None { rom, ram: None } => match a {
-                0x0000..=0x7fff => rom[a as usize],
+            Self::Mbc1 { rom, rom_bk, .. } => match a { // TODO: ram
+                0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
+                0x4000..=0x7fff => rom.get((a as usize & 0x3fff) | ((*rom_bk as usize).max(1) << 14)).copied().unwrap_or(0xff),
+                _ => 0xff,
+            },
+            Self::Mbc5 { rom, ram, ram_en, rom_bk, ram_bk } => match a {
+                0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
+                0x4000..=0x7fff => rom.get((a as usize & 0x3fff) | ((*rom_bk as usize) << 14)).copied().unwrap_or(0xff),
+                0xa000..=0xbfff => if *ram_en {
+                    ram.get((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).copied().unwrap_or(0xff)
+                } else {
+                    0xff
+                },
                 _ => 0xff,
             },
         }
@@ -63,11 +117,30 @@ impl sm83::bus::Bus for Mapper<'_> {
 
     fn store(&mut self, a: u16, d: u8) {
         match self {
-            Self::None { rom: _, ram: Some(ram) } => match a {
-                0xa000..=0xbfff => ram[a as usize - 0xa000] = d,
+            Self::None { rom: _, ram } => match a {
+                0xa000..=0xbfff => ram.get_mut(a as usize - 0xa000).map(|r| *r = d).unwrap_or(()),
                 _ => {},
             },
-            Self::None { rom: _, ram: None } => {},
+            Self::Mbc1 { ram_en, rom_bk, ram_bk, mode, .. } => match a {
+                0x0000..=0x1fff => *ram_en = d == 0xa,
+                0x2000..=0x3fff => *rom_bk = d & 0x1f,
+                0x4000..=0x5fff => *ram_bk = d & 3,
+                0x6000..=0x7fff => *mode = d & 1 != 0,
+                _ => {},
+            },
+            Self::Mbc5 { ram_en, rom_bk, ram_bk, .. } => match a {
+                0x0000..=0x1fff => *ram_en = d & 0xf == 0xa,
+                0x2000..=0x2fff => {
+                    *rom_bk &= !0xff;
+                    *rom_bk |= d as u16;
+                },
+                0x3000..=0x3fff => {
+                    *rom_bk &= !0x100;
+                    *rom_bk |= (d as u16 & 1) << 8;
+                },
+                0x4000..=0x5fff => if d < 0x10 { *ram_bk = d; },
+                _ => {},
+            },
         }
     }
 }

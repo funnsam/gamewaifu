@@ -79,32 +79,67 @@ fn main() {
 
     println!("\x1b[?25l\x1b[?1049h\x1b[2J\x1b[97m");
 
+    let mut prev_pf = "";
+
+    let tmx: usize = std::env::args().nth(2).and_then(|a| a.parse().ok()).unwrap_or(2);
+    let tmy = tmx * 2;
+    let tmyh = tmy / 2;
+
     loop {
         print!("\x1b[2K\x1b[H");
-        const MX: usize = 1;
-        const MY: usize = MX * 2;
 
-        for my in 0..144 / MY {
-            for mx in 0..160 / MX {
-                let x = mx * MX;
-                let y = my * MY;
-                let mut v = 0;
+        for my in 0..144 / tmy {
+            for mx in 0..160 / tmx {
+                let x = mx * tmx;
+                let y = my * tmy;
 
-                for sy in 0..MY {
-                    for sx in 0..MX {
-                        v += gb_fb[(y + sy) * 160 + x + sx].load(Ordering::Relaxed) as usize;
+                let mut l = 0;
+                for sy in 0..tmyh {
+                    for sx in 0..tmx {
+                        l += gb_fb[(y + sy) * 160 + x + sx].load(Ordering::Relaxed) as usize;
                     }
                 }
 
-                let c = CHARS[(v + (MX * MY / 2)) / (MX * MY)];
-                print!("{}", c.to_string().repeat((MX * 2) / MY));
+                let mut u = 0;
+                for sy in 0..tmyh {
+                    for sx in 0..tmx {
+                        u += gb_fb[(y + sy + tmyh) * 160 + x + sx].load(Ordering::Relaxed) as usize;
+                    }
+                }
+
+                let u = (u + (tmx * tmyh / 2)) / (tmx * tmyh);
+                let l = (l + (tmx * tmyh / 2)) / (tmx * tmyh);
+
+                let c = CHARS[l][u];
+                let p = PREFIXES[l][u];
+
+                if p != prev_pf {
+                    print!("{p}");
+                    prev_pf = p;
+                }
+
+                print!("{c}");
             }
 
             println!();
         }
     }
 
-    const CHARS: [char; 4] = ['█', '▓', '░', ' '];
+    const CHARS: [[char; 4]; 4] = [
+        // ↓ l   -> u
+        [' ', '▀', '▀', '▀'],
+        ['▄', ' ', '▀', '▀'],
+        ['▄', '▄', ' ', '▀'],
+        ['▄', '▄', '▄', ' '],
+    ];
+
+    const PREFIXES: [[&str; 4]; 4] = [
+        // ↓ l   -> u
+        ["\x1b[107m", "\x1b[97;47m", "\x1b[97;100m", "\x1b[97;40m"],
+        ["\x1b[97;47m", "\x1b[47m", "\x1b[37;100m", "\x1b[37;40m"],
+        ["\x1b[97;100m", "\x1b[37;100m", "\x1b[100m", "\x1b[40;90m"],
+        ["\x1b[97;40m", "\x1b[37;40m", "\x1b[90;40m", "\x1b[0m"],
+    ];
 }
 
 fn run_emu(mut gb: gb::Gameboy, gb_fb: Arc<[AtomicU8]>) {

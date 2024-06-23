@@ -16,6 +16,8 @@ pub struct Sm83<Bus: bus::Bus> {
 
     int_ie: u8,
     int_if: u8,
+
+    pub div: u16,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -121,6 +123,8 @@ impl<B: bus::Bus> Sm83<B> {
 
             int_ie: 0,
             int_if: 0,
+
+            div: 0,
         }
     }
 
@@ -503,6 +507,7 @@ impl<B: bus::Bus> Sm83<B> {
 
     fn incr_cycles(&mut self, t: usize) {
         self.cycles += 4 * t;
+        self.div += 4 * t as u16;
     }
 
     fn push(&mut self, v: u16) {
@@ -602,12 +607,11 @@ impl<B: bus::Bus> Sm83<B> {
         self.incr_cycles(1);
 
         #[cfg(not(feature = "test"))]
-        if a == 0xffff {
-            self.int_ie
-        } else if a == 0xff0f {
-            self.int_if
-        } else {
-            self.bus.load(a)
+        match a {
+            0xff04 => (self.div >> 8) as u8,
+            0xff0f => self.int_if,
+            0xffff => self.int_ie,
+            _ => self.bus.load(a),
         }
 
         #[cfg(feature = "test")]
@@ -624,12 +628,11 @@ impl<B: bus::Bus> Sm83<B> {
         self.incr_cycles(1);
 
         #[cfg(not(feature = "test"))]
-        if a == 0xffff {
-            self.int_ie = d;
-        } else if a == 0xff0f {
-            self.int_if = d;
-        } else {
-            self.bus.store(a, d);
+        match a {
+            0xff04 => self.div = 0,
+            0xff0f => self.int_if = d,
+            0xffff => self.int_ie = d,
+            _ => self.bus.store(a, d),
         }
 
         #[cfg(feature = "test")]

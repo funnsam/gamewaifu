@@ -4,3 +4,6 @@
 [submodule "gb-test-roms"]
 	path = gb-test-roms
 	url = git@github.com:retrio/gb-test-roms
+[submodule "tests"]
+	path = tests
+	url = git@github.com:retrio/gb-test-roms

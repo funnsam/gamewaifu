@@ -3,6 +3,12 @@ pub struct Bus<'a> {
     pub mapper: crate::mapper::Mapper<'a>,
     pub wram: [u8; 0x2000],
     pub hram: [u8; 0x7f],
+
+    pub(crate) oam_dma_at: (u8, u8),
+
+    pub(crate) tima: u8,
+    pub(crate) tma: u8,
+    pub(crate) tac: u8,
 }
 
 impl<'a> Bus<'a> {
@@ -13,6 +19,11 @@ impl<'a> Bus<'a> {
 
             wram: [0; 0x2000],
             hram: [0; 0x7f],
+
+            oam_dma_at: (0, 0xff),
+            tima: 1,
+            tma: 0,
+            tac: 0,
         }
     }
 }
@@ -27,17 +38,22 @@ impl sm83::bus::Bus for Bus<'_> {
             0xe000..=0xfdff => self.wram[a as usize - 0xe000],
             0xfe00..=0xfe9f => self.ppu.oam[a as usize - 0xfe00],
             0xfea0..=0xfeff => 0xff,
+            0xff00 => 0x0f,
+            0xff05 => self.tima,
+            0xff06 => self.tma,
+            0xff07 => self.tac,
             0xff40 => self.ppu.lcdc,
             0xff41 => self.ppu.get_stat(),
             0xff42 => self.ppu.scroll.1,
             0xff43 => self.ppu.scroll.0,
             0xff44 => self.ppu.ly,
             0xff45 => self.ppu.lyc,
+            0xff46 => self.oam_dma_at.0,
             0xff47 => self.ppu.bgp,
             0xff48..=0xff49 => self.ppu.obp[a as usize - 0xff48],
             0xff4a => self.ppu.window.1,
             0xff4b => self.ppu.window.0,
-            0xff00..=0xff7f => { println!("io {a:04x}"); 144 },
+            0xff00..=0xff7f => { eprintln!("io {a:04x}"); 144 },
             0xff80..=0xfffe => self.hram[a as usize - 0xff80],
             0xffff => unreachable!(),
         }
@@ -52,17 +68,21 @@ impl sm83::bus::Bus for Bus<'_> {
             0xe000..=0xfdff => self.wram[a as usize - 0xe000] = d,
             0xfe00..=0xfe9f => self.ppu.oam[a as usize - 0xfe00] = d,
             0xfea0..=0xfeff => {},
+            0xff05 => self.tima = d,
+            0xff06 => self.tma = d,
+            0xff07 => self.tac = d & 7,
             0xff40 => self.ppu.lcdc = d,
             0xff41 => self.ppu.set_stat(d),
             0xff42 => self.ppu.scroll.1 = d,
             0xff43 => self.ppu.scroll.0 = d,
             0xff44 => {},
             0xff45 => self.ppu.lyc = d,
+            0xff46 => self.oam_dma_at = (d, 0),
             0xff47 => self.ppu.bgp = d,
             0xff48..=0xff49 => self.ppu.obp[a as usize - 0xff48] = d,
             0xff4a => self.ppu.window.1 = d,
             0xff4b => self.ppu.window.0 = d,
-            0xff00..=0xff7f => println!("io {a:04x} {d:02x}"),
+            0xff00..=0xff7f => eprintln!("io {a:04x} {d:02x}"),
             0xff80..=0xfffe => self.hram[a as usize - 0xff80] = d,
             0xffff => unreachable!(),
         }

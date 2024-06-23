@@ -45,10 +45,10 @@ impl Ppu {
 
         let y = self.ly;
         self.ly = (self.ly + 1) % 153;
-        if y >= 144 {
+        if y == 144 {
             self.wly = 0;
             return Some(0);
-        } else if y > 144 {
+        } else if y >= 144 {
             return None;
         }
 
@@ -56,11 +56,11 @@ impl Ppu {
         let mut strip_ob = [(0, false); 160];
         let mut buf = [0; 2];
 
-        let mut plot_bg = |x: usize, c: u8| if x < 144 {
+        let mut plot_bg = |x: usize, c: u8| if x < 160 {
             strip_bg[x] = (self.bgp >> (c * 2)) & 3;
         };
 
-        let mut plot_ob = |x: usize, c: u8, pr: bool, p: u8| if x < 144 && strip_ob[x].0 == 0 {
+        let mut plot_ob = |x: usize, c: u8, pr: bool, p: u8| if x < 160 && strip_ob[x].0 == 0 {
             strip_ob[x] = ((p >> (c * 2)) & 3, pr);
         };
 
