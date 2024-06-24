@@ -32,6 +32,8 @@ fn main() {
         });
     }
 
+    let font = rl.load_font_ex(&thread, "Roboto-Regular.ttf", 18, None).unwrap();
+
     while !rl.window_should_close() {
         {
             let mut d = rl.begin_drawing(&thread);
@@ -48,7 +50,7 @@ fn main() {
             d.draw_texture_ex(&rl_fb, Vector2 { x, y }, 0.0, scale, Color::WHITE);
 
             let fps = d.get_fps();
-            d.draw_text(&format!("Display FPS {fps}   Scale {scale}"), 0, 0, 20, Color::WHITE);
+            d.draw_text_ex(&font, &format!("Display FPS {fps}   Scale {scale}"), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
         }
 
         let du = !rl.is_key_down(KeyboardKey::KEY_W) as u8;
