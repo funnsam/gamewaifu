@@ -18,6 +18,13 @@ pub struct Sm83<Bus: bus::Bus> {
     int_if: u8,
 
     pub div: u16,
+
+    mode: Mode,
+}
+
+enum Mode {
+    Normal,
+    Halting,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -125,6 +132,8 @@ impl<B: bus::Bus> Sm83<B> {
             int_if: 0,
 
             div: 0,
+
+            mode: Mode::Normal,
         }
     }
 
@@ -175,6 +184,12 @@ impl<B: bus::Bus> Sm83<B> {
         if self.after_ei {
             self.ime = true;
             self.after_ei = false;
+        }
+
+        if matches!(self.mode, Mode::Halting) {
+            self.incr_cycles(1);
+            self.check_interrupts();
+            return;
         }
 
         let inst = self.ir;
@@ -275,9 +290,10 @@ impl<B: bus::Bus> Sm83<B> {
                 setf!(n 0, h 0, c !self.get_flag(FC));
             },
             (1, 6, 6, _, _) => { // halt
-                self.check_interrupts();
+                self.mode = Mode::Halting;
+                println!("{:04x}", self.pc);
                 self.ir = self.load_bus_u8(self.pc);
-                return; // some funny quirk
+                return;
             },
             (1, _, _, _, _) => { // ld r8, r8
                 let d = self.load_reg_r8(z);
@@ -488,9 +504,16 @@ impl<B: bus::Bus> Sm83<B> {
     }
 
     fn check_interrupts(&mut self) {
+        let i = self.int_if & self.int_ie;
+
+        if i != 0 {
+            self.mode = Mode::Normal;
+
+            if matches!(self.mode, Mode::Halting) { eprintln!("y"); }
+        }
+
         if !self.ime { return; }
 
-        let i = self.int_if & self.int_ie;
         for b in 0..8 {
             if (i >> b) & 1 != 0 {
                 self.int_if ^= 1 << b;
