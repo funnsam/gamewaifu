@@ -1,8 +1,8 @@
-pub struct Bus {
-    pub ppu: crate::ppu::Ppu,
-    pub mapper: crate::mapper::Mapper,
-    pub wram: [u8; 0x2000],
-    pub hram: [u8; 0x7f],
+pub(crate) struct Bus {
+    pub(crate) ppu: crate::ppu::Ppu,
+    pub(crate) mapper: crate::mapper::Mapper,
+    pub(crate) wram: [u8; 0x2000],
+    pub(crate) hram: [u8; 0x7f],
 
     pub(crate) oam_dma_at: (u8, u8),
 
@@ -12,10 +12,16 @@ pub struct Bus {
 
     pub keys: u8,
     key_sel: u8,
+
+    boot_rom: Option<Box<[u8]>>,
 }
 
 impl Bus {
-    pub fn new(ppu: crate::ppu::Ppu, mapper: crate::mapper::Mapper) -> Self {
+    pub(crate) fn new(
+        ppu: crate::ppu::Ppu,
+        mapper: crate::mapper::Mapper,
+        boot_rom: Option<Box<[u8]>>
+    ) -> Self {
         Self {
             ppu,
             mapper,
@@ -30,12 +36,18 @@ impl Bus {
 
             keys: 0xff,
             key_sel: 0,
+
+            boot_rom,
         }
     }
 }
 
 impl sm83::bus::Bus for Bus {
     fn load(&mut self, a: u16) -> u8 {
+        if let (true, Some(br)) = (a <= 0x00ff, &self.boot_rom) {
+            return br[a as usize];
+        }
+
         match a {
             0x0000..=0x7fff => self.mapper.load(a),
             0x8000..=0x9fff => self.ppu.vram[a as usize - 0x8000],
@@ -70,6 +82,11 @@ impl sm83::bus::Bus for Bus {
     }
 
     fn store(&mut self, a: u16, d: u8) {
+        if self.boot_rom.is_some() && a == 0xff50 {
+            self.boot_rom = None;
+            return;
+        }
+
         match a {
             0x0000..=0x7fff => self.mapper.store(a, d),
             0x8000..=0x9fff => self.ppu.vram[a as usize - 0x8000] = d,

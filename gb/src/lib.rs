@@ -6,7 +6,7 @@ pub mod mapper;
 pub mod ppu;
 
 pub struct Gameboy {
-    pub cpu: sm83::Sm83<bus::Bus>,
+    cpu: sm83::Sm83<bus::Bus>,
 
     hsync: usize,
     timer_prev: bool,
@@ -15,25 +15,28 @@ pub struct Gameboy {
 }
 
 impl Gameboy {
-    pub fn new(mapper: mapper::Mapper, keys: Arc<AtomicU8>) -> Self {
+    pub fn new(mapper: mapper::Mapper, keys: Arc<AtomicU8>, boot_rom: Option<Box<[u8]>>) -> Self {
+        let have_br = boot_rom.is_some();
         let ppu = ppu::Ppu::new();
-        let bus = bus::Bus::new(ppu, mapper);
+        let bus = bus::Bus::new(ppu, mapper, boot_rom);
         let mut cpu = sm83::Sm83::new(bus);
 
-        cpu.set_state(&sm83::cpu::State {
-            a: 0x01,
-            b: 0x00,
-            c: 0x13,
-            d: 0x00,
-            e: 0xd8,
-            f: 0x80,
-            h: 0x01,
-            l: 0xd4,
+        if !have_br {
+            cpu.set_state(&sm83::cpu::State {
+                a: 0x01,
+                b: 0x00,
+                c: 0x13,
+                d: 0x00,
+                e: 0xd8,
+                f: 0x80,
+                h: 0x01,
+                l: 0xd4,
 
-            pc: 0x0100,
-            sp: 0xfffe,
-            ir: 0,
-        });
+                pc: 0x0100,
+                sp: 0xfffe,
+                ir: 0,
+            });
+        }
 
         Self {
             cpu,

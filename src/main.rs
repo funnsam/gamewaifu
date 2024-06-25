@@ -1,11 +1,12 @@
 use std::{sync::{atomic::*, *}, thread};
 
+use clap::Parser;
+
+mod args;
+
 #[cfg(feature = "raylib")]
 fn main() {
     use raylib::{ffi::Vector2, prelude::*};
-
-    let rom = std::env::args().nth(1).unwrap();
-    let rom = std::fs::read(rom).unwrap();
 
     let (mut rl, thread) = raylib::init()
         .size(640, 570)
@@ -14,23 +15,8 @@ fn main() {
         .vsync()
         .build();
 
-    let mut gb_fb = Vec::with_capacity(160 * 144);
-    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
-    let gb_fb: Arc<_> = gb_fb.into();
-
-    let mut fb = vec![0; 160 * 144 * 4];
-    let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
-
-    let mapper = gb::mapper::Mapper::from_bin(&rom);
-    let keys = Arc::new(AtomicU8::new(0xff));
-    let gb = gb::Gameboy::new(mapper, Arc::clone(&keys));
-
-    {
-        let gb_fb = Arc::clone(&gb_fb);
-        thread::spawn(move || {
-            run_emu(gb, gb_fb);
-        });
-    }
+    let args = args::Args::parse();
+    let (gb_fb, keys) = init(&args);
 
     let font = rl.load_font_ex(&thread, "Roboto-Regular.ttf", 18, None).unwrap();
 
@@ -91,29 +77,15 @@ fn main() {
 
 #[cfg(not(feature = "raylib"))]
 fn main() {
-    let rom = std::env::args().nth(1).unwrap();
-    let rom = std::fs::read(rom).unwrap();
-
-    let mut gb_fb = Vec::with_capacity(160 * 144);
-    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
-    let gb_fb: Arc<_> = gb_fb.into();
-
-    let rom = rom;
-    let mapper = gb::mapper::Mapper::from_bin(&rom);
-    let gb = gb::Gameboy::new(mapper, Arc::new(AtomicU8::new(0xff)));
-
-    {
-        let gb_fb = Arc::clone(&gb_fb);
-        thread::spawn(move || {
-            run_emu(gb, gb_fb);
-        });
-    }
+    let args = args::Args::parse();
+    let (gb_fb, keys) = init(&args);
 
     println!("\x1b[?25l\x1b[?1049h\x1b[2J\x1b[97m");
 
-    let mut prev_pf = "";
+    let mut prev_pf_a = "";
+    let mut prev_pf_b = "";
 
-    let tmx: usize = std::env::args().nth(2).and_then(|a| a.parse().ok()).unwrap_or(2);
+    let tmx = args.zoom as usize;
     let tmy = tmx * 2;
     let tmyh = tmy / 2;
 
@@ -143,11 +115,20 @@ fn main() {
                 let l = (l + (tmx * tmyh / 2)) / (tmx * tmyh);
 
                 let c = CHARS[l][u];
-                let p = PREFIXES[l][u];
 
-                if p != prev_pf {
-                    print!("{p}");
-                    prev_pf = p;
+                let pa = PREFIXES_A[l][u];
+                let pb = PREFIXES_B[l][u];
+
+                if pa != prev_pf_a && pb != prev_pf_b && pa != "" && pb != "" {
+                    print!("\x1b[{pa};{pb}m");
+                    prev_pf_a = pa;
+                    prev_pf_b = pb;
+                } else if pa != prev_pf_a && pa != "" {
+                    print!("\x1b[{pa}m");
+                    prev_pf_a = pa;
+                } else if pb != prev_pf_b && pb != "" {
+                    print!("\x1b[{pb}m");
+                    prev_pf_b = pb;
                 }
 
                 print!("{c}");
@@ -165,12 +146,20 @@ fn main() {
         ['▄', '▄', '▄', ' '],
     ];
 
-    const PREFIXES: [[&str; 4]; 4] = [
+    const PREFIXES_A: [[&str; 4]; 4] = [
         // ↓ l   -> u
-        ["\x1b[107m", "\x1b[97;47m", "\x1b[97;100m", "\x1b[97;40m"],
-        ["\x1b[97;47m", "\x1b[47m", "\x1b[37;100m", "\x1b[37;40m"],
-        ["\x1b[97;100m", "\x1b[37;100m", "\x1b[100m", "\x1b[40;90m"],
-        ["\x1b[97;40m", "\x1b[37;40m", "\x1b[90;40m", "\x1b[40m"],
+        ["107", "47", "100", "40"],
+        ["47", "47", "100", "40"],
+        ["100", "100", "100", "40"],
+        ["40", "40", "40", "40"],
+    ];
+
+    const PREFIXES_B: [[&str; 4]; 4] = [
+        // ↓ l   -> u
+        ["", "97", "97", "97"],
+        ["97", "", "37", "37"],
+        ["97", "37", "", "90"],
+        ["97", "37", "90", ""],
     ];
 }
 
@@ -197,4 +186,27 @@ fn run_emu(mut gb: gb::Gameboy, gb_fb: Arc<[AtomicU8]>) {
 
         start = Instant::now();
     }
+}
+
+fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
+    let rom = std::fs::read(&args.rom).unwrap();
+    let br = args.boot_rom.as_ref().map(|b| std::fs::read(b).unwrap().into());
+
+    let mut gb_fb = Vec::with_capacity(160 * 144);
+    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
+    let gb_fb: Arc<_> = gb_fb.into();
+
+    let keys = Arc::new(AtomicU8::new(0xff));
+
+    let mapper = gb::mapper::Mapper::from_bin(&rom);
+    let gb = gb::Gameboy::new(mapper, Arc::clone(&keys), br);
+
+    {
+        let gb_fb = Arc::clone(&gb_fb);
+        thread::spawn(move || {
+            run_emu(gb, gb_fb);
+        });
+    }
+
+    (gb_fb, keys)
 }

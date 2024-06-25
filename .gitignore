@@ -1,5 +1,5 @@
 /target
-/tests/*.bin
 logs
 /Tetris.gb
 /PokeY.gb
+/dmg_boot.bin

@@ -10,7 +10,7 @@ for f in "./GameboyCPUTests/v2/$1"*.json; do
     echo -e "     \x1b[34;1mTesting\x1b[0m \`$(basename $f)\`"
     log="./logs/$(basename $f).log"
 
-    timeout 5 ./../../target/release/tester "$f" 2>&1 | head -n 100 > $log && {
+    timeout 5 ./../../target/release/tester "$f" 2>&1 | head -n 1000 > $log && {
         rm $log &
     } || {
         failed+=("$(basename $f)")

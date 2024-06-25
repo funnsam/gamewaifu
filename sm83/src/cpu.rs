@@ -121,8 +121,8 @@ impl<B: bus::Bus> Sm83<B> {
             ir: 0,
 
             regs: [0; 8],
-            sp: 0xfffe,
-            pc: 0x0100,
+            sp: 0x0000,
+            pc: 0x0000,
             ime: false,
 
             cycles: 0,
@@ -216,7 +216,10 @@ impl<B: bus::Bus> Sm83<B> {
             },
             (0, 4..=7, 0, _, _) => { // jr cc, d
                 let d = self.fetch_u8() as i8 as u16;
-                if self.cond_check(y - 4) { self.pc += d; }
+                if self.cond_check(y - 4) {
+                    self.pc += d;
+                    self.incr_cycles(1);
+                }
             },
             (0, _, 1, _, 0) => { // ld r16, i16
                 let d = self.fetch_u16();
@@ -291,7 +294,6 @@ impl<B: bus::Bus> Sm83<B> {
             },
             (1, 6, 6, _, _) => { // halt
                 self.mode = Mode::Halting;
-                println!("{:04x}", self.pc);
                 self.ir = self.load_bus_u8(self.pc);
                 return;
             },
@@ -363,6 +365,7 @@ impl<B: bus::Bus> Sm83<B> {
                 let n = self.fetch_u16();
                 if self.cond_check(y) {
                     self.pc = n;
+                    self.incr_cycles(1);
                 }
             },
             (3, 4, 2, _, _) => { // ldh c, a
@@ -421,7 +424,7 @@ impl<B: bus::Bus> Sm83<B> {
                 self.call(y as u16 * 8);
             },
             _ => {
-                println!("inv {x} {y} {z} @ {:04x}", self.pc);
+                eprintln!("inv {x} {y} {z} @ {:04x}", self.pc);
                 return; // inv opc never fetch
             },
         }
@@ -508,8 +511,6 @@ impl<B: bus::Bus> Sm83<B> {
 
         if i != 0 {
             self.mode = Mode::Normal;
-
-            if matches!(self.mode, Mode::Halting) { eprintln!("y"); }
         }
 
         if !self.ime { return; }

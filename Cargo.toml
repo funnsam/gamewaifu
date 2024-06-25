@@ -10,6 +10,7 @@ edition = "2021"
 gb = { path = "gb" }
 sm83 = { path = "sm83" }
 raylib = { version = "5.0.1", optional = true }
+clap = { version = "4.5.7", features = ["derive"] }
 
 [profile.dev]
 overflow-checks = false
