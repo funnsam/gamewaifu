@@ -1,7 +1,6 @@
 /target
 logs
-/Tetris.gb
-/PokeY.gb
+/*.gb
 /dmg_boot.bin
 /blargg-tests
 /mooneye-tests
