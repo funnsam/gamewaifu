@@ -8,6 +8,9 @@ mod args;
 fn main() {
     use raylib::{ffi::Vector2, prelude::*};
 
+    let args = args::Args::parse();
+    let (gb_fb, keys) = crate::init(&args);
+
     let (mut rl, thread) = raylib::init()
         .size(640, 570)
         .title("Gamewaifu")
@@ -15,8 +18,8 @@ fn main() {
         .vsync()
         .build();
 
-    let args = args::Args::parse();
-    let (gb_fb, keys) = init(&args);
+    let mut fb = vec![0; 160 * 144 * 4];
+    let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
 
     let font = rl.load_font_ex(&thread, "Roboto-Regular.ttf", 18, None).unwrap();
 
