@@ -5,5 +5,5 @@
 	path = gb-test-roms
 	url = git@github.com:retrio/gb-test-roms
 [submodule "tests"]
-	path = tests
+	path = blargg-tests
 	url = git@github.com:retrio/gb-test-roms

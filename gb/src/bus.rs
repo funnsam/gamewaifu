@@ -96,6 +96,8 @@ impl sm83::bus::Bus for Bus {
             0xfe00..=0xfe9f => self.ppu.oam[a as usize - 0xfe00] = d,
             0xfea0..=0xfeff => {},
             0xff00 => self.key_sel = d & 0x30,
+            0xff01 => eprint!("{}", d as char),
+            0xff02 => {},
             0xff05 => self.tima = d,
             0xff06 => self.tma = d,
             0xff07 => self.tac = d & 7,

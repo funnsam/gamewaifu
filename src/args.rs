@@ -7,7 +7,7 @@ pub struct Args {
     #[arg(short, long)]
     pub boot_rom: Option<String>,
 
-    #[cfg(not(feature = "raylib"))]
+    #[cfg(feature = "console")]
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
     pub zoom: u32,
 }

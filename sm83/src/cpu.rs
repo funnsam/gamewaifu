@@ -125,7 +125,7 @@ impl<B: bus::Bus> Sm83<B> {
             pc: 0x0000,
             ime: false,
 
-            cycles: 0,
+            cycles: 1,
             after_ei: false,
 
             int_ie: 0,
@@ -176,8 +176,9 @@ impl<B: bus::Bus> Sm83<B> {
             };
         }
 
+        self.cycles -= 1;
+        self.div += 1;
         if self.cycles != 0 {
-            self.cycles -= 1;
             return;
         }
 
@@ -200,8 +201,7 @@ impl<B: bus::Bus> Sm83<B> {
         let q = (inst >> 3) & 1;
 
         match (x, y, z, p, q) {
-            (0, 0, 0, _, _) => { // nop
-            },
+            (0, 0, 0, _, _) => {}, // nop
             (0, 1, 0, _, _) => { // ld [i16], sp
                 let a = self.fetch_u16();
                 self.store_bus_u16(a, self.sp);
@@ -213,8 +213,9 @@ impl<B: bus::Bus> Sm83<B> {
             },
             (0, 3, 0, _, _) => { // jr s8
                 self.pc += self.fetch_u8() as i8 as u16;
+                self.incr_cycles(1);
             },
-            (0, 4..=7, 0, _, _) => { // jr cc, d
+            (0, 4..=7, 0, _, _) => { // jr cc, s8
                 let d = self.fetch_u8() as i8 as u16;
                 if self.cond_check(y - 4) {
                     self.pc += d;
@@ -246,12 +247,14 @@ impl<B: bus::Bus> Sm83<B> {
             (0, _, 3, _, 0) => { // inc r16
                 self.incr_cycles(1);
                 let d = self.load_reg_r16(p);
-                self.store_reg_r16(p, d + 1);
+                let v = self.idu_inc(d);
+                self.store_reg_r16(p, v);
             },
             (0, _, 3, _, 1) => { // dec r16
                 self.incr_cycles(1);
                 let d = self.load_reg_r16(p);
-                self.store_reg_r16(p, d - 1);
+                let v = self.idu_dec(d);
+                self.store_reg_r16(p, v);
             },
             (0, _, 4, _, _) => { // inc r8
                 let d = self.load_reg_r8(y);
@@ -310,6 +313,7 @@ impl<B: bus::Bus> Sm83<B> {
                 if self.cond_check(y) {
                     let r = self.pop();
                     self.pc = r;
+                    self.incr_cycles(1);
                 }
             },
             (3, 4, 0, _, _) => { // ldh i8, a
@@ -332,7 +336,7 @@ impl<B: bus::Bus> Sm83<B> {
                 self.store_reg_r8(A, d);
             },
             (3, 7, 0, _, _) => { // ld hl, sp + s8
-                self.incr_cycles(2); // goddamn sharp
+                self.incr_cycles(1);
                 let e = self.fetch_u8();
                 self.store_reg_r16(HL, self.sp + e as i8 as u16);
 
@@ -346,11 +350,13 @@ impl<B: bus::Bus> Sm83<B> {
             },
             (3, _, 1, 0, 1) => { // ret
                 let r = self.pop();
+                self.incr_cycles(1);
                 self.pc = r;
             },
             (3, _, 1, 1, 1) => { // reti
                 self.ime = true;
                 let r = self.pop();
+                self.incr_cycles(1);
                 self.pc = r;
             },
             (3, _, 1, 2, 1) => { // jp hl
@@ -360,6 +366,7 @@ impl<B: bus::Bus> Sm83<B> {
             (3, _, 1, 3, 1) => { // ld sp, hl
                 let p = self.load_reg_r16(HL);
                 self.sp = p;
+                self.incr_cycles(1);
             },
             (3, 0..=3, 2, _, _) => { // jp cc, i16
                 let n = self.fetch_u16();
@@ -392,6 +399,7 @@ impl<B: bus::Bus> Sm83<B> {
             },
             (3, 0, 3, _, _) => { // jp i16
                 self.pc = self.fetch_u16();
+                self.incr_cycles(1);
             },
             (3, 1, 3, _, _) => { // cb prefix
                 self.execute_cb();
@@ -453,6 +461,14 @@ impl<B: bus::Bus> Sm83<B> {
         };
 
         self.store_reg_r8(z, v);
+    }
+
+    fn idu_inc(&mut self, n: u16) -> u16 {
+        n + 1
+    }
+
+    fn idu_dec(&mut self, n: u16) -> u16 {
+        n - 1
     }
 
     fn shift(&mut self, m: u8, v: u8, a: bool) -> u8 {
@@ -531,7 +547,6 @@ impl<B: bus::Bus> Sm83<B> {
 
     fn incr_cycles(&mut self, t: usize) {
         self.cycles += 4 * t;
-        self.div += 4 * t as u16;
     }
 
     fn push(&mut self, v: u16) {
@@ -541,7 +556,6 @@ impl<B: bus::Bus> Sm83<B> {
     }
 
     fn pop(&mut self) -> u16 {
-        self.incr_cycles(1);
         let v = self.load_bus_u16(self.sp);
         self.sp += 2;
         v
@@ -709,12 +723,14 @@ impl<B: bus::Bus> Sm83<B> {
             DE => ((self.load_reg_r8(D) as u16) << 8) | (self.load_reg_r8(E) as u16),
             HLI => {
                 let hl = self.load_reg_r16(HL);
-                self.store_reg_r16(HL, hl + 1);
+                let i = self.idu_inc(hl);
+                self.store_reg_r16(HL, i);
                 hl
             },
             HLD => {
                 let hl = self.load_reg_r16(HL);
-                self.store_reg_r16(HL, hl - 1);
+                let d = self.idu_dec(hl);
+                self.store_reg_r16(HL, d);
                 hl
             },
             _ => panic!(),

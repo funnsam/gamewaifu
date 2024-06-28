@@ -7,6 +7,8 @@ pub enum Mapper {
         rom: Vec<u8>,
         ram: Vec<u8>,
 
+        rom_mask: usize,
+
         ram_en: bool,
         rom_bk: u8,
         ram_bk: u8,
@@ -16,6 +18,8 @@ pub enum Mapper {
     Mbc5 {
         rom: Vec<u8>,
         ram: Vec<u8>,
+
+        rom_mask: usize,
 
         ram_en: bool,
         rom_bk: u16,
@@ -65,6 +69,8 @@ impl Mapper {
                     rom: bin.to_vec(),
                     ram: vec![0xff; ram_banks * 8192],
 
+                    rom_mask: (rom_banks << 14) - 1,
+
                     ram_en: false,
                     rom_bk: 0,
                     ram_bk: 0,
@@ -76,6 +82,8 @@ impl Mapper {
                 Mapper::Mbc5 {
                     rom: bin.to_vec(),
                     ram: vec![0xff; ram_banks * 8192],
+
+                    rom_mask: (rom_banks << 14) - 1,
 
                     ram_en: false,
                     rom_bk: 1,
@@ -95,9 +103,9 @@ impl sm83::bus::Bus for Mapper {
                 0xa000..=0xbfff => ram.get(a as usize - 0xa000).copied().unwrap_or(0xff),
                 _ => 0xff,
             },
-            Self::Mbc1 { rom, ram, rom_bk, ram_en, ram_bk, .. } => match a {
+            Self::Mbc1 { rom, ram, rom_mask, rom_bk, ram_en, ram_bk, .. } => match a {
                 0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
-                0x4000..=0x7fff => rom.get((a as usize & 0x3fff) | ((*rom_bk as usize).max(1) << 14)).copied().unwrap_or(0xff),
+                0x4000..=0x7fff => rom.get(((a as usize & 0x3fff) | ((*rom_bk as usize).max(1) << 14)) & *rom_mask).copied().unwrap_or(0xff),
                 0xa000..=0xbfff => if *ram_en {
                     ram.get((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).copied().unwrap_or(0xff)
                 } else {
@@ -105,9 +113,9 @@ impl sm83::bus::Bus for Mapper {
                 },
                 _ => 0xff,
             },
-            Self::Mbc5 { rom, ram, ram_en, rom_bk, ram_bk } => match a {
+            Self::Mbc5 { rom, ram, rom_mask, ram_en, rom_bk, ram_bk } => match a {
                 0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
-                0x4000..=0x7fff => rom.get((a as usize & 0x3fff) | ((*rom_bk as usize) << 14)).copied().unwrap_or(0xff),
+                0x4000..=0x7fff => rom.get(((a as usize & 0x3fff) | ((*rom_bk as usize) << 14)) & *rom_mask).copied().unwrap_or(0xff),
                 0xa000..=0xbfff => if *ram_en {
                     ram.get((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).copied().unwrap_or(0xff)
                 } else {

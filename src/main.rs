@@ -75,12 +75,16 @@ fn main() {
     }
 }
 
-#[cfg(not(feature = "raylib"))]
+#[cfg(feature = "console")]
 fn main() {
     let args = args::Args::parse();
     let (gb_fb, keys) = init(&args);
 
-    println!("\x1b[?25l\x1b[?1049h\x1b[2J\x1b[97m");
+    println!("\x1b[?25l\x1b[?1049h\x1b[2J");
+    let _ = ctrlc::set_handler(|| {
+        println!("\x1b[0m\x1b[?25h\x1b[?1049l");
+        std::process::exit(0);
+    });
 
     let mut prev_pf_a = "";
     let mut prev_pf_b = "";

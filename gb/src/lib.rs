@@ -62,7 +62,7 @@ impl Gameboy {
         let dma = self.cpu.bus.oam_dma_at;
         if dma.1 <= 0x9f {
             let v = self.cpu.bus.load(((dma.0 as u16) << 8) | dma.1 as u16);
-            self.cpu.bus.store(0xfe00 | dma.1 as u16, v);
+            self.cpu.bus.ppu.oam[dma.1 as usize] = v;
             self.cpu.bus.oam_dma_at.1 += 1;
         }
 
