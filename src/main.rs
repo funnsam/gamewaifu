@@ -42,14 +42,14 @@ fn main() {
             d.draw_text_ex(&font, &format!("Display FPS {fps}   Scale {scale}"), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
         }
 
-        let du = !rl.is_key_down(KeyboardKey::KEY_W) as u8;
-        let dd = !rl.is_key_down(KeyboardKey::KEY_S) as u8;
-        let dl = !rl.is_key_down(KeyboardKey::KEY_A) as u8;
-        let dr = !rl.is_key_down(KeyboardKey::KEY_D) as u8;
-        let sa = !rl.is_key_down(KeyboardKey::KEY_I) as u8;
-        let sb = !rl.is_key_down(KeyboardKey::KEY_O) as u8;
-        let sl = !rl.is_key_down(KeyboardKey::KEY_V) as u8;
-        let st = !rl.is_key_down(KeyboardKey::KEY_B) as u8;
+        let du = rl.is_key_down(KeyboardKey::KEY_W) as u8;
+        let dd = rl.is_key_down(KeyboardKey::KEY_S) as u8;
+        let dl = rl.is_key_down(KeyboardKey::KEY_A) as u8;
+        let dr = rl.is_key_down(KeyboardKey::KEY_D) as u8;
+        let sa = rl.is_key_down(KeyboardKey::KEY_I) as u8;
+        let sb = rl.is_key_down(KeyboardKey::KEY_O) as u8;
+        let sl = rl.is_key_down(KeyboardKey::KEY_V) as u8;
+        let st = rl.is_key_down(KeyboardKey::KEY_B) as u8;
 
         keys.store(
             dr | (dl << 1) | (du << 2) | (dd << 3)
@@ -60,11 +60,12 @@ fn main() {
         BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
     }
 
-    const PALETTE: [u32; 4] = [
+    const PALETTE: [u32; 5] = [
         0xf5faefff,
         0x86c270ff,
         0x2f6957ff,
         0x0b1920ff,
+        0xff0000ff,
     ];
 
     fn convert(gb_fb: &[AtomicU8], fb: &mut [u8]) {

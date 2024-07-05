@@ -8,7 +8,6 @@ pub mod ppu;
 pub struct Gameboy {
     cpu: sm83::Sm83<bus::Bus>,
 
-    hsync: usize,
     timer_prev: bool,
 
     keys: Arc<AtomicU8>,
@@ -41,7 +40,6 @@ impl Gameboy {
         Self {
             cpu,
 
-            hsync: 0,
             timer_prev: false,
 
             keys,
@@ -51,12 +49,7 @@ impl Gameboy {
     pub fn step(&mut self, gb_fb: &[AtomicU8]) {
         self.cpu.step();
 
-        if self.hsync >= 456 {
-            self.cpu.bus.ppu.render_strip(gb_fb).map(|i| self.cpu.interrupt(i));
-            self.hsync = 0;
-        }
-
-        self.hsync += 1;
+        self.cpu.bus.ppu.step(gb_fb).map(|i| self.cpu.interrupt(i));
 
         // oam dma
         let dma = self.cpu.bus.oam_dma_at;

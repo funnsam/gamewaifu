@@ -15,6 +15,16 @@ pub enum Mapper {
         mode: bool,
         rom_ext: bool,
     },
+    Mbc3 {
+        rom: Vec<u8>,
+        ram: Vec<u8>,
+
+        rom_mask: usize,
+
+        ram_en: bool,
+        rom_bk: u8,
+        ram_bk: u8,
+    },
     Mbc5 {
         rom: Vec<u8>,
         ram: Vec<u8>,
@@ -78,7 +88,19 @@ impl Mapper {
                     rom_ext: false, // TODO: fat ass rom
                 }
             },
-            0x19 | 0x1a | 0x1b => { // mbc5
+            0x11 | 0x12 | 0x13 => { // mbc3
+                Mapper::Mbc3 {
+                    rom: bin.to_vec(),
+                    ram: vec![0xff; ram_banks * 8192],
+
+                    rom_mask: (rom_banks << 14) - 1,
+
+                    ram_en: false,
+                    rom_bk: 1,
+                    ram_bk: 0,
+                }
+            },
+            0x19 | 0x1a | 0x1b | 0x1c | 0x1d | 0x1e => { // mbc5
                 Mapper::Mbc5 {
                     rom: bin.to_vec(),
                     ram: vec![0xff; ram_banks * 8192],
@@ -113,6 +135,16 @@ impl sm83::bus::Bus for Mapper {
                 },
                 _ => 0xff,
             },
+            Self::Mbc3 { rom, ram, rom_mask, ram_en, rom_bk, ram_bk } => match a {
+                0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
+                0x4000..=0x7fff => rom.get(((a as usize & 0x3fff) | ((*rom_bk as usize) << 14)) & *rom_mask).copied().unwrap_or(0xff),
+                0xa000..=0xbfff => if *ram_en {
+                    ram.get((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).copied().unwrap_or(0xff)
+                } else {
+                    0xff
+                },
+                _ => 0xff,
+            },
             Self::Mbc5 { rom, ram, rom_mask, ram_en, rom_bk, ram_bk } => match a {
                 0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
                 0x4000..=0x7fff => rom.get(((a as usize & 0x3fff) | ((*rom_bk as usize) << 14)) & *rom_mask).copied().unwrap_or(0xff),
@@ -137,6 +169,12 @@ impl sm83::bus::Bus for Mapper {
                 0x2000..=0x3fff => *rom_bk = d & 0x1f,
                 0x4000..=0x5fff => *ram_bk = d & 3,
                 0x6000..=0x7fff => *mode = d & 1 != 0,
+                _ => {},
+            },
+            Self::Mbc3 { ram_en, rom_bk, ram_bk, .. } => match a {
+                0x0000..=0x1fff => *ram_en = d == 0xa,
+                0x2000..=0x23ff => *rom_bk = d.max(1),
+                0x4000..=0x5fff => if d < 4 { *ram_bk = d; },
                 _ => {},
             },
             Self::Mbc5 { ram_en, rom_bk, ram_bk, .. } => match a {

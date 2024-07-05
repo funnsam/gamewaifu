@@ -536,6 +536,7 @@ impl<B: bus::Bus> Sm83<B> {
                 self.int_if ^= 1 << b;
                 self.ime = false;
                 self.call(0x40 + b * 8);
+                self.incr_cycles(2);
                 return;
             }
         }
