@@ -14,9 +14,9 @@ pub struct Gameboy {
 }
 
 impl Gameboy {
-    pub fn new(mapper: mapper::Mapper, keys: Arc<AtomicU8>, boot_rom: Option<Box<[u8]>>) -> Self {
+    pub fn new(mapper: mapper::Mapper, boot_rom: Option<Box<[u8]>>, framebuffer: Arc<[AtomicU8]>, keys: Arc<AtomicU8>) -> Self {
         let have_br = boot_rom.is_some();
-        let ppu = ppu::Ppu::new();
+        let ppu = ppu::Ppu::new(framebuffer);
         let bus = bus::Bus::new(ppu, mapper, boot_rom);
         let mut cpu = sm83::Sm83::new(bus);
 
@@ -46,10 +46,10 @@ impl Gameboy {
         }
     }
 
-    pub fn step(&mut self, gb_fb: &[AtomicU8]) {
+    pub fn step(&mut self) {
         self.cpu.step();
 
-        self.cpu.bus.ppu.step(gb_fb).map(|i| self.cpu.interrupt(i));
+        self.cpu.bus.ppu.step().map(|i| self.cpu.interrupt(i));
 
         // oam dma
         let dma = self.cpu.bus.oam_dma_at;

@@ -1,6 +1,8 @@
-use std::sync::atomic::*;
+use std::sync::{atomic::*, Arc};
 
 pub struct Ppu {
+    framebuffer: Arc<[AtomicU8]>,
+
     vram: [u8; 0x2000],
     pub(crate) oam: [u8; 0xa0],
 
@@ -19,8 +21,10 @@ pub struct Ppu {
 }
 
 impl Ppu {
-    pub fn new() -> Self {
+    pub fn new(framebuffer: Arc<[AtomicU8]>) -> Self {
         Self {
+            framebuffer,
+
             vram: [0; 0x2000],
             oam: [0; 0xa0],
 
@@ -40,9 +44,8 @@ impl Ppu {
     }
 
     // returns interrupt
-    pub fn step(&mut self, fb: &[AtomicU8]) -> Option<u8> {
+    pub fn step(&mut self) -> Option<u8> {
         if self.is_disabled() {
-            fb[0].store(4, Ordering::Relaxed);
             return None;
         }
 
@@ -180,7 +183,7 @@ impl Ppu {
         }
 
         for (x, (b, (o, pr))) in strip_bg.into_iter().zip(strip_ob).enumerate() {
-            fb[y as usize * 160 + x].store(
+            self.framebuffer[y as usize * 160 + x].store(
                 if o == 0 || (pr && b != 0) { b } else { o },
                 Ordering::Relaxed,
             );
@@ -195,8 +198,6 @@ impl Ppu {
     }
 
     fn get_mode(&self) -> usize {
-        if self.is_disabled() { return 0; }
-
         match (self.hsync, self.ly) {
             (0..80, ..144) => 2,
             (80..252, ..144) => 3,
@@ -239,8 +240,11 @@ impl Ppu {
             (0xfe00..=0xfe9f, 0..=1) => self.oam[addr as usize - 0xfe00] = data,
             (0xff40, _) => {
                 if data & 0x80 == 0 {
-                    self.hsync = 0;
+                    self.hsync = 455;
                     self.ly = 0;
+                    self.framebuffer.iter().for_each(|i| { i.fetch_or(4, Ordering::Relaxed); });
+                } else {
+                    self.framebuffer.iter().for_each(|i| { i.fetch_and(!4, Ordering::Relaxed); });
                 }
                 println!("yuh {data:02x}");
                 self.lcdc = data;

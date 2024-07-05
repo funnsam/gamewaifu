@@ -60,12 +60,15 @@ fn main() {
         BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
     }
 
-    const PALETTE: [u32; 5] = [
+    const PALETTE: [u32; 8] = [
         0xf5faefff,
         0x86c270ff,
         0x2f6957ff,
         0x0b1920ff,
-        0xff0000ff,
+        0xf50000ff,
+        0x860000ff,
+        0x2f0000ff,
+        0x0b0000ff,
     ];
 
     fn convert(gb_fb: &[AtomicU8], fb: &mut [u8]) {
@@ -108,14 +111,14 @@ fn main() {
                 let mut l = 0;
                 for sy in 0..tmyh {
                     for sx in 0..tmx {
-                        l += gb_fb[(y + sy) * 160 + x + sx].load(Ordering::Relaxed) as usize;
+                        l += gb_fb[(y + sy) * 160 + x + sx].load(Ordering::Relaxed) as usize & 3;
                     }
                 }
 
                 let mut u = 0;
                 for sy in 0..tmyh {
                     for sx in 0..tmx {
-                        u += gb_fb[(y + sy + tmyh) * 160 + x + sx].load(Ordering::Relaxed) as usize;
+                        u += gb_fb[(y + sy + tmyh) * 160 + x + sx].load(Ordering::Relaxed) as usize & 3;
                     }
                 }
 
@@ -173,14 +176,14 @@ fn main() {
 
 static BURST: AtomicBool = AtomicBool::new(false);
 
-fn run_emu(mut gb: gb::Gameboy, gb_fb: Arc<[AtomicU8]>) {
+fn run_emu(mut gb: gb::Gameboy) {
     use std::time::*;
 
     let mut start = Instant::now();
     let mut dur = Duration::new(0, 0);
 
     loop {
-        gb.step(&gb_fb);
+        gb.step();
 
         if !BURST.load(Ordering::Relaxed) {
             dur += Duration::from_secs_f64(1.0 / 4194304.0);
@@ -207,14 +210,11 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     let keys = Arc::new(AtomicU8::new(0xff));
 
     let mapper = gb::mapper::Mapper::from_bin(&rom);
-    let gb = gb::Gameboy::new(mapper, Arc::clone(&keys), br);
+    let gb = gb::Gameboy::new(mapper, br, Arc::clone(&gb_fb), Arc::clone(&keys));
 
-    {
-        let gb_fb = Arc::clone(&gb_fb);
-        thread::spawn(move || {
-            run_emu(gb, gb_fb);
-        });
-    }
+    thread::spawn(move || {
+        run_emu(gb);
+    });
 
     (gb_fb, keys)
 }
