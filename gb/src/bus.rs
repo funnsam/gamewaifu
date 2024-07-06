@@ -30,7 +30,7 @@ impl Bus {
             hram: [0; 0x7f],
 
             oam_dma_at: (0, 0xff),
-            tima: 1,
+            tima: 0,
             tma: 0,
             tac: 0,
 
@@ -83,8 +83,6 @@ impl sm83::bus::Bus for Bus {
             0xe000..=0xfdff => self.wram[a as usize - 0xe000] = d,
             0xfea0..=0xfeff => {},
             0xff00 => self.key_sel = d & 0x30,
-            0xff01 => eprint!("{}", d as char),
-            0xff02 => {},
             0xff05 => self.tima = d,
             0xff06 => self.tma = d,
             0xff07 => self.tac = d & 7,

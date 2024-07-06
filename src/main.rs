@@ -39,15 +39,15 @@ fn main() {
             d.draw_texture_ex(&rl_fb, Vector2 { x, y }, 0.0, scale, Color::WHITE);
 
             let fps = d.get_fps();
-            d.draw_text_ex(&font, &format!("Display FPS {fps}   Scale {scale}"), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
+            d.draw_text_ex(&font, &format!("Display FPS {fps}   Scale {scale}   Delay {}ns", DELAY.load(Ordering::Relaxed)), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
         }
 
         let du = rl.is_key_down(KeyboardKey::KEY_W) as u8;
         let dd = rl.is_key_down(KeyboardKey::KEY_S) as u8;
         let dl = rl.is_key_down(KeyboardKey::KEY_A) as u8;
         let dr = rl.is_key_down(KeyboardKey::KEY_D) as u8;
-        let sa = rl.is_key_down(KeyboardKey::KEY_I) as u8;
-        let sb = rl.is_key_down(KeyboardKey::KEY_O) as u8;
+        let sa = rl.is_key_down(KeyboardKey::KEY_O) as u8;
+        let sb = rl.is_key_down(KeyboardKey::KEY_I) as u8;
         let sl = rl.is_key_down(KeyboardKey::KEY_V) as u8;
         let st = rl.is_key_down(KeyboardKey::KEY_B) as u8;
 
@@ -175,23 +175,27 @@ fn main() {
 }
 
 static BURST: AtomicBool = AtomicBool::new(false);
+static DELAY: AtomicU32 = AtomicU32::new(0);
 
 fn run_emu(mut gb: gb::Gameboy) {
     use std::time::*;
 
     let mut start = Instant::now();
     let mut dur = Duration::new(0, 0);
+    let t_cycle = Duration::new(0, 238);
 
     loop {
         gb.step();
 
         if !BURST.load(Ordering::Relaxed) {
-            dur += Duration::from_secs_f64(1.0 / 4194304.0);
+            dur += t_cycle;
             dur = dur.saturating_sub(start.elapsed());
+            // DELAY.fetch_add(start.elapsed().saturating_sub(t_cycle).subsec_nanos(), Ordering::Relaxed);
 
-            if dur.as_millis() > 10 {
+            if dur.as_millis() > 100 {
                 thread::sleep(dur);
                 dur = Duration::new(0, 0);
+                DELAY.store(1, Ordering::Relaxed);
             }
         }
 

@@ -9,6 +9,7 @@ pub struct Gameboy {
     cpu: sm83::Sm83<bus::Bus>,
 
     timer_prev: bool,
+    timer_reload: bool,
 
     keys: Arc<AtomicU8>,
 }
@@ -41,14 +42,16 @@ impl Gameboy {
             cpu,
 
             timer_prev: false,
+            timer_reload: false,
 
             keys,
         }
     }
 
     pub fn step(&mut self) {
-        self.cpu.step();
+        let tima = self.cpu.bus.tima;
 
+        self.cpu.step();
         self.cpu.bus.ppu.step().map(|i| self.cpu.interrupt(i));
 
         // oam dma
@@ -60,21 +63,24 @@ impl Gameboy {
         }
 
         // timer update
-        let bit = (self.cpu.div >> match self.cpu.bus.tac & 3 {
-            1 => 3,
-            2 => 5,
-            3 => 7,
-            0 => 9,
-            _ => unreachable!(),
-        }) as u8 & (self.cpu.bus.tac >> 2) != 0;
-        let prev = core::mem::replace(&mut self.timer_prev, bit);
-
-        if prev && !bit {
-            self.cpu.bus.tima += 1;
-
-            if self.cpu.bus.tima == 0 {
+        if self.cpu.div & 3 == 0 {
+            if core::mem::replace(&mut self.timer_reload, false) {
                 self.cpu.bus.tima = self.cpu.bus.tma;
                 self.cpu.interrupt(2);
+            }
+
+            let bit = (self.cpu.div >> match self.cpu.bus.tac & 3 {
+                1 => 3,
+                2 => 5,
+                3 => 7,
+                0 => 9,
+                _ => unreachable!(),
+            }) as u8 & (self.cpu.bus.tac >> 2) != 0;
+            let prev = core::mem::replace(&mut self.timer_prev, bit);
+
+            if prev && !bit {
+                self.cpu.bus.tima = tima + 1;
+                self.timer_reload = self.cpu.bus.tima == 0;
             }
         }
 

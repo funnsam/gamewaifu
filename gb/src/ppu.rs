@@ -193,7 +193,6 @@ impl Ppu {
     }
 
     fn gen_stat(&self, cond: bool, bit: u8) -> Option<u8> {
-        if cond { println!("{bit:02x}"); }
         (cond && self.stat & bit != 0).then_some(1)
     }
 
@@ -246,7 +245,6 @@ impl Ppu {
                 } else {
                     self.framebuffer.iter().for_each(|i| { i.fetch_and(!4, Ordering::Relaxed); });
                 }
-                println!("yuh {data:02x}");
                 self.lcdc = data;
             },
             (0xff41, _) => self.set_stat(data),
@@ -257,7 +255,7 @@ impl Ppu {
             (0xff48..=0xff49, _) => self.obp[addr as usize - 0xff48] = data,
             (0xff4a, _) => self.window.1 = data,
             (0xff4b, _) => self.window.0 = data,
-            _ => println!("nuh uh {addr:04x} {data:02x} {}", self.get_mode()),
+            _ => println!("ppu write fail {addr:04x} {data:02x} {}", self.get_mode()),
         }
     }
 }

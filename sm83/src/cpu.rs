@@ -44,9 +44,14 @@ pub struct State {
 
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "a: {:02x}, b: {:02x}, c: {:02x}, d: {:02x}", self.a, self.b, self.c, self.d)?;
-        writeln!(f, "e: {:02x}, f: {:02x}, h: {:02x}, l: {:02x}", self.e, self.f, self.h, self.l)?;
-        write!(f, "pc: {:04x}, sp: {:04x}", self.pc, self.sp)
+        write!(f, "\
+            af: {:02x}{:02x}, bc: {:02x}{:02x}, \
+            de: {:02x}{:02x}, hl: {:02x}{:02x}, \
+            pc: {:04x}, sp: {:04x}",
+            self.a, self.f, self.b, self.c,
+            self.d, self.e, self.h, self.l,
+            self.pc, self.sp,
+        )
     }
 }
 
@@ -535,6 +540,7 @@ impl<B: bus::Bus> Sm83<B> {
             if (i >> b) & 1 != 0 {
                 self.int_if ^= 1 << b;
                 self.ime = false;
+                println!("int {b} {}", self.get_state());
                 self.call(0x40 + b * 8);
                 self.incr_cycles(2);
                 return;

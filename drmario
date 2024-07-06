@@ -1,0 +1,54 @@
+timer int af: 0060, bc: af07 de: 00d8, hl: 86ae pc: 0266, sp: cfff (junk?)
+timer int af: 0200, bc: 029a de: 00d8, hl: 9a99 pc: 20af, sp: cffd (junk?)
+timer int af: 0000, bc: 153e de: 82c2, hl: 406c pc: 20b6, sp: cffb (junk?)
+timer int af: 6c00, bc: 103e de: 87c2, hl: 456c pc: 20b6, sp: cffb (junk?)
+timer int af: 1f00, bc: 0b3e de: 8cc2, hl: 4a6c pc: 20b6, sp: cffb (junk?)
+timer int af: 0000, bc: 063e de: 91c2, hl: 4f6c pc: 20b6, sp: cffb (junk?)
+timer int af: 2400, bc: 013e de: 96c2, hl: 546c pc: 20b6, sp: cffb (junk?)
+
+timer int af: 6e50, bc: f0ff de: 0492, hl: 0492 pc: 225d, sp: cffb
+    corr      7070      0000     0492      0492     2258      cffb
+timer int af: 0000, bc: 0000 de: 5d9a, hl: ffe7 pc: 0359, sp: cfff
+
+timer int af: 0040, bc: 7a06 de: 5de7, hl: d578 pc: 01f2, sp: d003
+timer int af: 0040, bc: bd0d de: 5de7, hl: ccbb pc: 0258, sp: cfff
+timer int af: 0040, bc: ed02 de: 5de7, hl: c1ec pc: 0257, sp: cfff
+timer int af: 0040, bc: 1e18 de: 5de7, hl: 971c pc: 0267, sp: cfff
+timer int af: 0040, bc: 4e0d de: 5de7, hl: 8c4d pc: 0266, sp: cfff
+timer int af: 0040, bc: 7e02 de: 5de7, hl: 817d pc: 0266, sp: cfff
+timer int af: d700, bc: 17d7 de: 8028, hl: 3dd2 pc: 20b3, sp: cffb
+timer int af: d700, bc: 12d7 de: 8528, hl: 42d2 pc: 20b3, sp: cffb
+timer int af: df00, bc: 0dd7 de: 8a28, hl: 47d2 pc: 20b3, sp: cffb
+timer int af: df00, bc: 08d7 de: 8f28, hl: 4cd2 pc: 20b3, sp: cffb
+timer int af: d700, bc: 03d7 de: 9428, hl: 51d2 pc: 20b3, sp: cffb
+timer int af: 2250, bc: 0000 de: 0492, hl: 0492 pc: 2259, sp: cffb
+timer int af: 1040, bc: 0507 de: 5d43, hl: 99ad pc: 20d3, sp: cff9
+timer int af: 0000, bc: 0000 de: 5d9a, hl: ffe7 pc: 0359, sp: cfff
+timer int af: 0040, bc: 7a06 de: 5de7, hl: d578 pc: 01f2, sp: d003
+timer int af: 7750, bc: 0000 de: 5de7, hl: cfff pc: 0218, sp: d003
+timer int af: 0060, bc: 4f09 de: 5de7, hl: c84e pc: 0257, sp: cfff
+timer int af: 0040, bc: 801e de: 5de7, hl: 9d7f pc: 0268, sp: cfff
+timer int af: 0040, bc: b113 de: 5de7, hl: 92af pc: 0267, sp: cfff
+timer int af: 0040, bc: e108 de: 5de7, hl: 87df pc: 0267, sp: cfff
+timer int af: ff00, bc: 0341 de: 5de7, hl: 9b40 pc: 20ae, sp: cffd
+timer int af: df00, bc: 15cb de: 8234, hl: 3fde pc: 20b3, sp: cffb
+timer int af: db00, bc: 10cb de: 8734, hl: 44de pc: 20b3, sp: cffb
+timer int af: cb00, bc: 0bcb de: 8c34, hl: 49de pc: 20b3, sp: cffb
+timer int af: cf00, bc: 06cb de: 9134, hl: 4ede pc: 20b3, sp: cffb
+timer int af: cb00, bc: 01cb de: 9634, hl: 53de pc: 20b3, sp: cffb
+timer int af: 5e50, bc: 0000 de: 0492, hl: 0492 pc: 2259, sp: cffb
+timer int af: 0000, bc: 0000 de: 5d9a, hl: ffe7 pc: 0359, sp: cfff
+timer int af: 0040, bc: 7a06 de: 5de7, hl: d578 pc: 01f2, sp: d003
+timer int af: 0060, bc: ef0e de: 5de7, hl: cdee pc: 0257, sp: cfff
+timer int af: 0060, bc: 1f04 de: 5de7, hl: c31d pc: 0258, sp: cfff
+timer int af: 0040, bc: 5019 de: 5de7, hl: 984f pc: 0266, sp: cfff
+timer int af: 0040, bc: 800e de: 5de7, hl: 8d7f pc: 0266, sp: cfff
+timer int af: 0040, bc: b003 de: 5de7, hl: 82af pc: 0266, sp: cfff
+timer int af: ff00, bc: 006b de: 5de7, hl: 986a pc: 20ae, sp: cffd
+timer int af: 0000, bc: 1365 de: 849a, hl: 4245 pc: 20b5, sp: cffb
+timer int af: ff00, bc: 0e65 de: 899a, hl: 4745 pc: 20b5, sp: cffb
+timer int af: a000, bc: 0965 de: 8e9a, hl: 4c45 pc: 20b5, sp: cffb
+timer int af: 3200, bc: 0465 de: 939a, hl: 5145 pc: 20b5, sp: cffb
+timer int af: 1250, bc: 0000 de: 0492, hl: 0492 pc: 2259, sp: cffb
+timer int af: b940, bc: 0d0c de: 5c9e, hl: 98a9 pc: 20d4, sp: cff9
+timer int af: 0000, bc: 0000 de: 5d9a, hl: ffe7 pc: 0359, sp: cfff
