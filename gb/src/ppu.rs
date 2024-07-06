@@ -74,7 +74,7 @@ impl Ppu {
         let mut buf = [0; 2];
 
         let mut plot_bg = |x: usize, c: u8| if x < 160 {
-            strip_bg[x] = (self.bgp >> (c * 2)) & 3;
+            strip_bg[x] = c;
         };
 
         let mut plot_ob = |x: usize, c: u8, pr: bool, p: u8| if x < 160 && strip_ob[x].0 == 0 {
@@ -184,7 +184,11 @@ impl Ppu {
 
         for (x, (b, (o, pr))) in strip_bg.into_iter().zip(strip_ob).enumerate() {
             self.framebuffer[y as usize * 160 + x].store(
-                if o == 0 || (pr && b != 0) { b } else { o },
+                if o == 0 || (pr && b != 0) {
+                    (self.bgp >> (b * 2)) & 3
+                } else {
+                    o
+                },
                 Ordering::Relaxed,
             );
         }

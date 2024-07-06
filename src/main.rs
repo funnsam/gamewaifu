@@ -39,7 +39,11 @@ fn main() {
             d.draw_texture_ex(&rl_fb, Vector2 { x, y }, 0.0, scale, Color::WHITE);
 
             let fps = d.get_fps();
-            d.draw_text_ex(&font, &format!("Display FPS {fps}   Scale {scale}   Delay {}ns", DELAY.load(Ordering::Relaxed)), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
+            d.draw_text_ex(&font, &format!("Display FPS {fps}\nScale {scale}"), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
+
+            if args.waifu {
+                d.draw_text(&format!("bruh you expected waifu??"), 0, 100, 18, Color::RED);
+            }
         }
 
         let du = rl.is_key_down(KeyboardKey::KEY_W) as u8;
@@ -175,7 +179,6 @@ fn main() {
 }
 
 static BURST: AtomicBool = AtomicBool::new(false);
-static DELAY: AtomicU32 = AtomicU32::new(0);
 
 fn run_emu(mut gb: gb::Gameboy) {
     use std::time::*;
@@ -190,12 +193,10 @@ fn run_emu(mut gb: gb::Gameboy) {
         if !BURST.load(Ordering::Relaxed) {
             dur += t_cycle;
             dur = dur.saturating_sub(start.elapsed());
-            // DELAY.fetch_add(start.elapsed().saturating_sub(t_cycle).subsec_nanos(), Ordering::Relaxed);
 
-            if dur.as_millis() > 100 {
+            if dur.as_millis() > 10 { // do not set this to too high or too low
                 thread::sleep(dur);
                 dur = Duration::new(0, 0);
-                DELAY.store(1, Ordering::Relaxed);
             }
         }
 
@@ -211,7 +212,7 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
     let gb_fb: Arc<_> = gb_fb.into();
 
-    let keys = Arc::new(AtomicU8::new(0xff));
+    let keys = Arc::new(AtomicU8::new(0x00));
 
     let mapper = gb::mapper::Mapper::from_bin(&rom);
     let gb = gb::Gameboy::new(mapper, br, Arc::clone(&gb_fb), Arc::clone(&keys));
