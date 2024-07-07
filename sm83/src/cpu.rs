@@ -305,8 +305,7 @@ impl<B: bus::Bus> Sm83<B> {
                 setf!(n 0, h 0, c !self.get_flag(FC));
             },
             (1, 6, 6, _, _) => { // halt
-                // self.mode = Mode::Halting;
-                // TODO: fix it
+                self.mode = Mode::Halting;
             },
             (1, _, _, _, _) => { // ld r8, r8
                 let d = self.load_reg_r8(z);
@@ -447,6 +446,10 @@ impl<B: bus::Bus> Sm83<B> {
 
         self.check_interrupts();
         self.ir = self.fetch_u8();
+
+        if matches!(self.mode, Mode::Halting) {
+            self.pc -= 1;
+        }
     }
 
     fn execute_cb(&mut self) {

@@ -53,11 +53,11 @@ impl Ppu {
         self.hsync = (self.hsync + 1) % 456;
 
         match (hsync, self.ly) {
-            (0, _) => {},
+            (455, _) => {},
 
-            (1, ..144) => return self.gen_stat(true, 0x20),
+            (0, ..144) => return self.gen_stat(true, 0x20),
             (252, ..144) => return self.gen_stat(true, 0x08),
-            (1, 144) => return self.gen_stat(true, 0x10),
+            (0, 144) => return self.gen_stat(true, 0x10),
 
             _ => return None,
         }
