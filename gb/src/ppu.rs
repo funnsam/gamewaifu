@@ -54,14 +54,17 @@ impl Ppu {
 
         match (hsync, self.ly) {
             (0, _) => {},
+
             (1, ..144) => return self.gen_stat(true, 0x20),
             (252, ..144) => return self.gen_stat(true, 0x08),
             (1, 144) => return self.gen_stat(true, 0x10),
+
             _ => return None,
         }
 
         let y = self.ly;
         self.ly = (self.ly + 1) % 154;
+
         if y == 144 {
             self.wly = 0;
             return Some(0);

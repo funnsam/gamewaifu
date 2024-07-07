@@ -15,7 +15,12 @@ pub struct Gameboy {
 }
 
 impl Gameboy {
-    pub fn new(mapper: mapper::Mapper, boot_rom: Option<Box<[u8]>>, framebuffer: Arc<[AtomicU8]>, keys: Arc<AtomicU8>) -> Self {
+    pub fn new(
+        mapper: mapper::Mapper,
+        boot_rom: Option<Box<[u8]>>,
+        framebuffer: Arc<[AtomicU8]>,
+        keys: Arc<AtomicU8>,
+    ) -> Self {
         let have_br = boot_rom.is_some();
         let ppu = ppu::Ppu::new(framebuffer);
         let bus = bus::Bus::new(ppu, mapper, boot_rom);

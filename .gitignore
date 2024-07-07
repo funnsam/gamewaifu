@@ -1,6 +1,8 @@
 /target
 logs
 /*.gb
+/*.sav
+/*.sym
 /dmg_boot.bin
 /blargg-tests
 /mooneye-tests

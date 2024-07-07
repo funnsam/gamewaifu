@@ -17,7 +17,7 @@ pub struct Sm83<Bus: bus::Bus> {
     int_ie: u8,
     int_if: u8,
 
-    pub div: u16,
+    pub div: usize,
 
     mode: Mode,
 }
@@ -305,7 +305,8 @@ impl<B: bus::Bus> Sm83<B> {
                 setf!(n 0, h 0, c !self.get_flag(FC));
             },
             (1, 6, 6, _, _) => { // halt
-                self.mode = Mode::Halting;
+                // self.mode = Mode::Halting;
+                // TODO: fix it
             },
             (1, _, _, _, _) => { // ld r8, r8
                 let d = self.load_reg_r8(z);

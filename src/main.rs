@@ -195,7 +195,7 @@ fn run_emu(mut gb: gb::Gameboy) {
             dur += t_cycle;
             dur = dur.saturating_sub(start.elapsed());
 
-            if dur.as_millis() > 10 { // do not set this to too high or too low
+            if dur.as_millis() > 3 {
                 thread::sleep(dur);
                 dur = Duration::new(0, 0);
             }

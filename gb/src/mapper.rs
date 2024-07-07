@@ -125,11 +125,11 @@ impl sm83::bus::Bus for Mapper {
                 0xa000..=0xbfff => ram.get(a as usize - 0xa000).copied().unwrap_or(0xff),
                 _ => 0xff,
             },
-            Self::Mbc1 { rom, ram, rom_mask, rom_bk, ram_en, ram_bk, .. } => match a {
+            Self::Mbc1 { rom, ram, rom_mask, rom_bk, ram_en, ram_bk, mode, .. } => match a {
                 0x0000..=0x3fff => rom.get(a as usize).copied().unwrap_or(0xff),
                 0x4000..=0x7fff => rom.get(((a as usize & 0x3fff) | ((*rom_bk as usize).max(1) << 14)) & *rom_mask).copied().unwrap_or(0xff),
                 0xa000..=0xbfff => if *ram_en {
-                    ram.get((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).copied().unwrap_or(0xff)
+                    ram.get((a as usize & 0x1fff) | (mbc1_get_ram_bank(*ram_bk as usize, *mode) << 13)).copied().unwrap_or(0xff)
                 } else {
                     0xff
                 },
@@ -164,20 +164,26 @@ impl sm83::bus::Bus for Mapper {
                 0xa000..=0xbfff => ram.get_mut(a as usize - 0xa000).map(|r| *r = d).unwrap_or(()),
                 _ => {},
             },
-            Self::Mbc1 { ram_en, rom_bk, ram_bk, mode, .. } => match a {
+            Self::Mbc1 { ram, ram_en, rom_bk, ram_bk, mode, .. } => match a {
                 0x0000..=0x1fff => *ram_en = d == 0xa,
                 0x2000..=0x3fff => *rom_bk = d & 0x1f,
                 0x4000..=0x5fff => *ram_bk = d & 3,
                 0x6000..=0x7fff => *mode = d & 1 != 0,
+                0xa000..=0xbfff => if *ram_en {
+                    ram.get_mut((a as usize & 0x1fff) | (mbc1_get_ram_bank(*ram_bk as usize, *mode) << 13)).map(|r| *r = d);
+                },
                 _ => {},
             },
-            Self::Mbc3 { ram_en, rom_bk, ram_bk, .. } => match a {
+            Self::Mbc3 { ram, ram_en, rom_bk, ram_bk, .. } => match a {
                 0x0000..=0x1fff => *ram_en = d == 0xa,
                 0x2000..=0x23ff => *rom_bk = d.max(1),
                 0x4000..=0x5fff => if d < 4 { *ram_bk = d; },
+                0xa000..=0xbfff => if *ram_en {
+                    ram.get_mut((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).map(|r| *r = d);
+                },
                 _ => {},
             },
-            Self::Mbc5 { ram_en, rom_bk, ram_bk, .. } => match a {
+            Self::Mbc5 { ram, ram_en, rom_bk, ram_bk, .. } => match a {
                 0x0000..=0x1fff => *ram_en = d & 0xf == 0xa,
                 0x2000..=0x2fff => {
                     *rom_bk &= !0xff;
@@ -188,8 +194,15 @@ impl sm83::bus::Bus for Mapper {
                     *rom_bk |= (d as u16 & 1) << 8;
                 },
                 0x4000..=0x5fff => if d < 0x10 { *ram_bk = d; },
+                0xa000..=0xbfff => if *ram_en {
+                    ram.get_mut((a as usize & 0x1fff) | ((*ram_bk as usize) << 13)).map(|r| *r = d);
+                },
                 _ => {},
             },
         }
     }
+}
+
+fn mbc1_get_ram_bank(rbk: usize, mode: bool) -> usize {
+    if mode { rbk } else { 0 }
 }
