@@ -193,8 +193,8 @@ impl<B: bus::Bus> Sm83<B> {
         }
 
         if matches!(self.mode, Mode::Halting) {
-            self.incr_cycles(1);
             self.check_interrupts();
+            self.cycles += 1;
             return;
         }
 
