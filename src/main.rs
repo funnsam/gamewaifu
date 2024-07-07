@@ -16,6 +16,7 @@ fn main() {
         .title("Gamewaifu")
         .resizable()
         .vsync()
+        .log_level(TraceLogLevel::LOG_NONE)
         .build();
 
     let mut fb = vec![0; 160 * 144 * 4];

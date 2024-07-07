@@ -1,11 +1,15 @@
-cp $91 (ldh a, [rly])
-int 2 af: 2450, bc: 0000, de: 0492, hl: 0492, pc: 225a, sp: cffb (7070 0000 0492 0492 2258 cffb)
+    2258: LDH a, [rLY & $FF] ; =$44
+    225a: CP $91
+    225c: JR nz, $2258
+int 2 af: 7070 (6f50), bc: 0000, de: 0492, hl: 0492, pc: 225c (225a), sp: cffb (cff9) 57349 (57364)
 
-dec c (ldh a, [$85])
-int 2 af: 3f40, bc: 0404, de: 5d5b, hl: 99d1, pc: 20d4, sp: cff9 (0000 0000 5d9a ffe7 0359 cfff)
+    0358: HALT
+    0359: LDH a, [$85]
+    035b: AND a
+    035c: JR z, $0358
+int 2 af: 0000, bc: 0000, de: 5d9a, hl: ffe7, pc: 0359, sp: cfff (cffd) 58373 (58388)
 
-int 2 af: 0000, bc: 0000, de: 5d9a, hl: ffe7, pc: 0359, sp: cfff (0000 0000 04da ffe7 0359 cfff)
-int 2 af: 0040, bc: 7906, de: 5de7, hl: d578, pc: 01f2, sp: d003 (0000 0000 04da ffe7 0359 cfff)
-int 2 af: 6070, bc: 0000, de: 0492, hl: 0492, pc: 225a, sp: cffb
-int 2 af: 0000, bc: 0000, de: 5d9a, hl: ffe7, pc: 0359, sp: cfff
-int 2 af: 0040, bc: 7906, de: 5de7, hl: d578, pc: 01f2, sp: d003
+int 0 af: 0040 (00a0), bc: 860b (0000), de: 5de7 (5d9a), hl: da85 (ffe7), pc: 01f0 (0359), sp: d003 (cffd) 27022 (27456)
+int 2 af: 0040 (0000), bc: 7906 (0000), de: 5de7 (04da), hl: d578 (ffe7), pc: 01f2 (0359), sp: d003 (cffd) 59398 (59412)
+int 2 af: 2450, bc: 0000, de: 0492, hl: 0492, pc: 225c, sp: cffb 5134
+int 2 af: 3f40, bc: 0408, de: 5d56, hl: 99cc, pc: 20d5, sp: cff9 6150

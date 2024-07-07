@@ -187,14 +187,18 @@ impl<B: bus::Bus> Sm83<B> {
             return;
         }
 
-        if self.after_ei {
+        if core::mem::replace(&mut self.after_ei, false) {
             self.ime = true;
-            self.after_ei = false;
         }
 
         if matches!(self.mode, Mode::Halting) {
             self.check_interrupts();
-            self.cycles += 1;
+            self.ir = self.fetch_u8();
+
+            if matches!(self.mode, Mode::Halting) {
+                self.pc -= 1;
+            }
+
             return;
         }
 
@@ -302,8 +306,6 @@ impl<B: bus::Bus> Sm83<B> {
             },
             (1, 6, 6, _, _) => { // halt
                 self.mode = Mode::Halting;
-                self.ir = self.load_bus_u8(self.pc);
-                return;
             },
             (1, _, _, _, _) => { // ld r8, r8
                 let d = self.load_reg_r8(z);
@@ -540,7 +542,7 @@ impl<B: bus::Bus> Sm83<B> {
             if (i >> b) & 1 != 0 {
                 self.int_if ^= 1 << b;
                 self.ime = false;
-                println!("int {b} {}", self.get_state());
+                println!("int {b} {} {}", self.get_state(), self.div);
                 self.call(0x40 + b * 8);
                 self.incr_cycles(2);
                 return;
