@@ -4,20 +4,32 @@ use clap::Parser;
 
 mod args;
 
+const AUD_BUFFER_SIZE: usize = 1024;
+
 #[cfg(feature = "raylib")]
 fn main() {
     use raylib::{ffi::Vector2, prelude::*};
-
-    let args = args::Args::parse();
-    let (gb_fb, keys) = crate::init(&args);
 
     let (mut rl, thread) = raylib::init()
         .size(640, 570)
         .title("Gamewaifu")
         .resizable()
         .vsync()
-        .log_level(TraceLogLevel::LOG_NONE)
         .build();
+
+    let aud_callback = |buf| {
+        let audio = RaylibAudio::init_audio_device().unwrap();
+        let mut stream = audio.new_audio_stream(gb::apu::SAMPLE_RATE as _, 16, 2);
+
+        stream.play();
+        loop {
+            while !stream.is_processed() {}
+            stream.update::<i16>(todo!());
+        }
+    };
+
+    let args = args::Args::parse();
+    let (gb_fb, keys) = crate::init(&args, Arc::new(aud_callback));
 
     let mut fb = vec![0; 160 * 144 * 4];
     let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
@@ -61,6 +73,18 @@ fn main() {
                | (sa << 4) | (sb << 5) | (sl << 6) | (st << 7),
             Ordering::Relaxed
         );
+
+        if rl.is_key_pressed(KeyboardKey::KEY_T) {
+            let color_map = PALETTE.iter().flat_map(|v| TryInto::<[u8; 3]>::try_into(&v.to_be_bytes()[..3]).unwrap()).collect::<Vec<u8>>();
+
+            let mut image = std::fs::File::create(&format!("screenshot_{}.gif", std::time::UNIX_EPOCH.elapsed().unwrap().as_millis())).unwrap();
+            let mut encoder = gif::Encoder::new(&mut image, 160, 144, &color_map).unwrap();
+            let mut frame = gif::Frame::default();
+            frame.width = 160;
+            frame.height = 144;
+            frame.buffer = std::borrow::Cow::Owned(gb_fb.iter().map(|v| v.load(Ordering::Relaxed)).collect());
+            encoder.write_frame(&frame).unwrap();
+        }
 
         BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
     }
@@ -205,7 +229,7 @@ fn run_emu(mut gb: gb::Gameboy) {
     }
 }
 
-fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
+fn init(args: &args::Args, aud_callback: Arc<dyn Fn(&[i16]) + Send>) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     let rom = std::fs::read(&args.rom).unwrap();
     let br = args.boot_rom.as_ref().map(|b| std::fs::read(b).unwrap().into());
 
@@ -216,7 +240,7 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     let keys = Arc::new(AtomicU8::new(0x00));
 
     let mapper = gb::mapper::Mapper::from_bin(&rom);
-    let gb = gb::Gameboy::new(mapper, br, Arc::clone(&gb_fb), Arc::clone(&keys));
+    let gb = gb::Gameboy::new(mapper, br, Arc::clone(&gb_fb), aud_callback, Arc::clone(&keys));
 
     thread::spawn(move || {
         run_emu(gb);

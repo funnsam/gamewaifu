@@ -242,8 +242,9 @@ impl Ppu {
 
     pub(crate) fn store(&mut self, addr: u16, data: u8) {
         match (addr, self.get_mode()) {
-            (0x8000..=0x9fff, 0..=2) => self.vram[addr as usize - 0x8000] = data,
-            (0xfe00..=0xfe9f, 0..=1) => self.oam[addr as usize - 0xfe00] = data,
+            // TODO: get good timings to not glich games
+            (0x8000..=0x9fff, _) => self.vram[addr as usize - 0x8000] = data,
+            (0xfe00..=0xfe9f, _) => self.oam[addr as usize - 0xfe00] = data,
             (0xff40, _) => {
                 if data & 0x80 == 0 {
                     self.hsync = 455;

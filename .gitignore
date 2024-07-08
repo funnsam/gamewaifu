@@ -3,6 +3,7 @@ logs
 /*.gb
 /*.sav
 /*.sym
+/screenshot*.gif
 /dmg_boot.bin
 /blargg-tests
 /mooneye-tests

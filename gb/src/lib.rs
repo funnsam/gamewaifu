@@ -1,6 +1,7 @@
 use std::sync::{atomic::*, *};
 use sm83::bus::Bus;
 
+pub mod apu;
 pub mod bus;
 pub mod mapper;
 pub mod ppu;
@@ -19,11 +20,13 @@ impl Gameboy {
         mapper: mapper::Mapper,
         boot_rom: Option<Box<[u8]>>,
         framebuffer: Arc<[AtomicU8]>,
+        aud_callback: Arc<dyn Fn(&[i16]) + Send>,
         keys: Arc<AtomicU8>,
     ) -> Self {
         let have_br = boot_rom.is_some();
         let ppu = ppu::Ppu::new(framebuffer);
-        let bus = bus::Bus::new(ppu, mapper, boot_rom);
+        let apu = apu::Apu::new(aud_callback);
+        let bus = bus::Bus::new(ppu, apu, mapper, boot_rom);
         let mut cpu = sm83::Sm83::new(bus);
 
         if !have_br {
@@ -58,6 +61,7 @@ impl Gameboy {
 
         self.cpu.step();
         self.cpu.bus.ppu.step().map(|i| self.cpu.interrupt(i));
+        self.cpu.bus.apu.step();
 
         // oam dma
         let dma = self.cpu.bus.oam_dma_at;

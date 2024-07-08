@@ -1,5 +1,7 @@
 pub(crate) struct Bus {
     pub(crate) ppu: crate::ppu::Ppu,
+    pub(crate) apu: crate::apu::Apu,
+
     pub(crate) mapper: crate::mapper::Mapper,
     pub(crate) wram: [u8; 0x2000],
     pub(crate) hram: [u8; 0x7f],
@@ -19,11 +21,14 @@ pub(crate) struct Bus {
 impl Bus {
     pub(crate) fn new(
         ppu: crate::ppu::Ppu,
+        apu: crate::apu::Apu,
         mapper: crate::mapper::Mapper,
         boot_rom: Option<Box<[u8]>>
     ) -> Self {
         Self {
             ppu,
+            apu,
+
             mapper,
 
             wram: [0; 0x2000],
@@ -64,6 +69,7 @@ impl sm83::bus::Bus for Bus {
             0xff07 => self.tac,
             0xff46 => self.oam_dma_at.0,
             0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.load(a),
+            0xff10..=0xff3f => self.apu.load(a),
             0xff00..=0xff7f => { eprintln!("io {a:04x}"); 0 },
             0xff80..=0xfffe => self.hram[a as usize - 0xff80],
             0xffff => unreachable!(),
@@ -88,6 +94,7 @@ impl sm83::bus::Bus for Bus {
             0xff07 => self.tac = d & 7,
             0xff46 => self.oam_dma_at = (d, 0),
             0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.store(a, d),
+            0xff10..=0xff3f => self.apu.store(a, d),
             0xff00..=0xff7f => eprintln!("io {a:04x} {d:02x}"),
             0xff80..=0xfffe => self.hram[a as usize - 0xff80] = d,
             0xffff => unreachable!(),
