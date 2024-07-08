@@ -1,6 +1,6 @@
-pub(crate) struct Bus {
+pub(crate) struct Bus<'a> {
     pub(crate) ppu: crate::ppu::Ppu,
-    pub(crate) apu: crate::apu::Apu,
+    pub(crate) apu: crate::apu::Apu<'a>,
 
     pub(crate) mapper: crate::mapper::Mapper,
     pub(crate) wram: [u8; 0x2000],
@@ -18,10 +18,10 @@ pub(crate) struct Bus {
     boot_rom: Option<Box<[u8]>>,
 }
 
-impl Bus {
+impl<'a> Bus<'a> {
     pub(crate) fn new(
         ppu: crate::ppu::Ppu,
-        apu: crate::apu::Apu,
+        apu: crate::apu::Apu<'a>,
         mapper: crate::mapper::Mapper,
         boot_rom: Option<Box<[u8]>>
     ) -> Self {
@@ -47,7 +47,7 @@ impl Bus {
     }
 }
 
-impl sm83::bus::Bus for Bus {
+impl sm83::bus::Bus for Bus<'_> {
     fn load(&mut self, a: u16) -> u8 {
         if let (true, Some(br)) = (a <= 0x00ff, &self.boot_rom) {
             return br[a as usize];

@@ -1,14 +1,16 @@
-use std::sync::Arc;
-
 pub const SAMPLE_RATE: usize = 48_000;
 pub const BUFFER_SIZE: usize = 1024;
 
 const SQ_WAVE_WAVEFORM: [u8; 4] = [0x01, 0x03, 0x0f, 0xfc];
 
-pub struct Apu {
+pub type Callback<'a> = Box<dyn FnMut(&[i16]) + 'a>;
+
+pub struct Apu<'a> {
     buffer: [i16; BUFFER_SIZE],
     buffer_at: usize,
-    callback: Arc<dyn Fn(&[i16]) + Send>,
+    callback: Callback<'a>,
+
+    output_timer: usize,
 
     enable: bool,
 
@@ -61,12 +63,14 @@ struct Envelope {
     pub pace: u8,
 }
 
-impl Apu {
-    pub fn new(callback: Arc<dyn Fn(&[i16]) + Send>) -> Self {
+impl<'a> Apu<'a> {
+    pub fn new(callback: Callback<'a>) -> Self {
         Self {
-            buffer: [0; 1024],
+            buffer: [0; BUFFER_SIZE],
             buffer_at: 0,
             callback,
+
+            output_timer: 0,
 
             enable: false,
             volume: (0, 0),
@@ -81,7 +85,20 @@ impl Apu {
     pub fn step(&mut self) {
         if !self.enable { return; }
 
-        let ch1_amp = self.ch1.step();
+        self.ch1.step();
+
+        self.output_timer += 1;
+        if self.output_timer % (crate::CLOCK_HZ / SAMPLE_RATE) == 0 {
+            let (l, r) = self.ch1.get_amp();
+            self.buffer[self.buffer_at + 0] = l * 0x7fff;
+            self.buffer[self.buffer_at + 1] = r * 0x7fff;
+            self.buffer_at += 2;
+
+            if self.buffer_at >= BUFFER_SIZE {
+                (self.callback)(&self.buffer);
+                self.buffer_at = 0;
+            }
+        }
     }
 
     pub fn load(&mut self, addr: u16) -> u8 {
@@ -168,13 +185,16 @@ impl Envelope {
 }
 
 impl Channel1 {
-    fn step(&mut self) -> u8 {
+    fn step(&mut self) {
         self.freq_timer -= 1;
         if self.freq_timer == 0 {
             self.freq_timer = (2048 - self.period) * 4;
             self.duty_pos = (self.duty_pos + 1) % 8;
         }
+    }
 
-        (SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1
+    fn get_amp(&self) -> (i16, i16) {
+        let amp = (SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1;
+        (amp as i16, amp as i16)
     }
 }

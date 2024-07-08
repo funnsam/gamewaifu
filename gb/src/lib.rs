@@ -6,8 +6,10 @@ pub mod bus;
 pub mod mapper;
 pub mod ppu;
 
-pub struct Gameboy {
-    cpu: sm83::Sm83<bus::Bus>,
+pub const CLOCK_HZ: usize = 4194304;
+
+pub struct Gameboy<'a> {
+    cpu: sm83::Sm83<bus::Bus<'a>>,
 
     timer_prev: bool,
     timer_reload: bool,
@@ -15,12 +17,12 @@ pub struct Gameboy {
     keys: Arc<AtomicU8>,
 }
 
-impl Gameboy {
+impl<'a> Gameboy<'a> {
     pub fn new(
         mapper: mapper::Mapper,
         boot_rom: Option<Box<[u8]>>,
         framebuffer: Arc<[AtomicU8]>,
-        aud_callback: Arc<dyn Fn(&[i16]) + Send>,
+        aud_callback: apu::Callback<'a>,
         keys: Arc<AtomicU8>,
     ) -> Self {
         let have_br = boot_rom.is_some();

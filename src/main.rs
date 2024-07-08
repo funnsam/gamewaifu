@@ -4,10 +4,38 @@ use clap::Parser;
 
 mod args;
 
-const AUD_BUFFER_SIZE: usize = 1024;
-
 #[cfg(feature = "raylib")]
 fn main() {
+    fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
+        let rom = std::fs::read(&args.rom).unwrap();
+        let br = args.boot_rom.as_ref().map(|b| std::fs::read(b).unwrap().into());
+
+        let mut gb_fb = Vec::with_capacity(160 * 144);
+        for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
+        let gb_fb: Arc<_> = gb_fb.into();
+
+        let keys = Arc::new(AtomicU8::new(0x00));
+
+        let mapper = gb::mapper::Mapper::from_bin(&rom);
+
+        {
+            let gb_fb = Arc::clone(&gb_fb);
+            let keys = Arc::clone(&keys);
+            thread::spawn(move || {
+                let audio = RaylibAudio::init_audio_device().unwrap();
+                ::core::hint::black_box(|| unsafe { raylib::ffi::SetAudioStreamBufferSizeDefault(gb::apu::BUFFER_SIZE as i32 * 2); })();
+                let mut stream = audio.new_audio_stream(gb::apu::SAMPLE_RATE as _, 16, 2);
+                stream.play();
+
+                let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| stream.update(buf)), keys);
+
+                run_emu(gb);
+            });
+        }
+
+        (gb_fb, keys)
+    }
+
     use raylib::{ffi::Vector2, prelude::*};
 
     let (mut rl, thread) = raylib::init()
@@ -17,19 +45,8 @@ fn main() {
         .vsync()
         .build();
 
-    let aud_callback = |buf| {
-        let audio = RaylibAudio::init_audio_device().unwrap();
-        let mut stream = audio.new_audio_stream(gb::apu::SAMPLE_RATE as _, 16, 2);
-
-        stream.play();
-        loop {
-            while !stream.is_processed() {}
-            stream.update::<i16>(todo!());
-        }
-    };
-
     let args = args::Args::parse();
-    let (gb_fb, keys) = crate::init(&args, Arc::new(aud_callback));
+    let (gb_fb, keys) = init(&args);
 
     let mut fb = vec![0; 160 * 144 * 4];
     let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
@@ -210,7 +227,7 @@ fn run_emu(mut gb: gb::Gameboy) {
 
     let mut start = Instant::now();
     let mut dur = Duration::new(0, 0);
-    let t_cycle = Duration::new(0, 238);
+    let t_cycle = Duration::from_secs_f64(1.0 / gb::CLOCK_HZ as f64);
 
     loop {
         gb.step();
@@ -229,7 +246,7 @@ fn run_emu(mut gb: gb::Gameboy) {
     }
 }
 
-fn init(args: &args::Args, aud_callback: Arc<dyn Fn(&[i16]) + Send>) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
+/* fn init(args: &args::Args, aud_callback: gb::apu::Callback) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     let rom = std::fs::read(&args.rom).unwrap();
     let br = args.boot_rom.as_ref().map(|b| std::fs::read(b).unwrap().into());
 
@@ -247,4 +264,4 @@ fn init(args: &args::Args, aud_callback: Arc<dyn Fn(&[i16]) + Send>) -> (Arc<[At
     });
 
     (gb_fb, keys)
-}
+} */
