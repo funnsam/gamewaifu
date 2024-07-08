@@ -69,7 +69,7 @@ impl Ppu {
             self.wly = 0;
             return Some(0);
         } else if y >= 144 {
-            return None;
+            return self.gen_stat(self.ly == self.lyc, 0x40);
         }
 
         let mut strip_bg = [0; 160];
@@ -116,7 +116,7 @@ impl Ppu {
                 }
             }
 
-            if self.lcdc & 0x20 != 0 && self.window.0 <= 166 && self.window.1 <= 143 && self.window.1 <= y { // window enable
+            if self.lcdc & 0x20 != 0 && self.window.0 <= 166 && self.window.1 <= y {
                 let wd_tilemap_base = if self.lcdc & 0x40 == 0 { 0x1800 } else { 0x1c00 };
 
                 let ty = self.wly as usize / 8;
@@ -262,7 +262,7 @@ impl Ppu {
             (0xff48..=0xff49, _) => self.obp[addr as usize - 0xff48] = data,
             (0xff4a, _) => self.window.1 = data,
             (0xff4b, _) => self.window.0 = data,
-            _ => println!("ppu write fail {addr:04x} {data:02x} {}", self.get_mode()),
+            _ => eprintln!("ppu write fail {addr:04x} {data:02x} {}", self.get_mode()),
         }
     }
 }

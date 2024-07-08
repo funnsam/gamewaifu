@@ -438,10 +438,7 @@ impl<B: bus::Bus> Sm83<B> {
             (3, _, 7, _, _) => { // rst
                 self.call(y as u16 * 8);
             },
-            _ => {
-                eprintln!("inv {x} {y} {z} @ {:04x}", self.pc);
-                return; // inv opc never fetch
-            },
+            _ => return, // inv opc never fetch
         }
 
         self.check_interrupts();
@@ -546,7 +543,7 @@ impl<B: bus::Bus> Sm83<B> {
             if (i >> b) & 1 != 0 {
                 self.int_if ^= 1 << b;
                 self.ime = false;
-                println!("int {b} {} {}", self.get_state(), self.div);
+                eprintln!("int {b} {} {}", self.get_state(), self.div);
                 self.call(0x40 + b * 8);
                 self.incr_cycles(2);
                 return;
