@@ -1,4 +1,4 @@
-pub const SAMPLE_RATE: usize = 48_000;
+pub const SAMPLE_RATE: usize = 48000;
 pub const BUFFER_SIZE: usize = 1024;
 
 const SQ_WAVE_WAVEFORM: [u8; 4] = [0x01, 0x03, 0x0f, 0xfc];
@@ -83,15 +83,28 @@ impl<'a> Apu<'a> {
     }
 
     pub fn step(&mut self) {
-        if !self.enable { return; }
+        if !self.enable {
+            return self.write(|_| (0, 0));
+        }
 
         self.ch1.step();
 
+        self.write(|s| {
+            let (l1, r1) = s.ch1.get_amp();
+            let l1 = if s.ch1.hard_pan.0 { l1 } else { 0 };
+            let r1 = if s.ch1.hard_pan.1 { r1 } else { 0 };
+
+            (l1, r1)
+        });
+    }
+
+    fn write(&mut self, cb: fn(&mut Self) -> (i16, i16)) {
         self.output_timer += 1;
         if self.output_timer % (crate::CLOCK_HZ / SAMPLE_RATE) == 0 {
-            let (l, r) = self.ch1.get_amp();
-            self.buffer[self.buffer_at + 0] = l * 0x7fff;
-            self.buffer[self.buffer_at + 1] = r * 0x7fff;
+            let (l, r) = cb(self);
+            self.buffer[self.buffer_at + 0] = l * 0x3fff; // NOTE: remove these when have more
+                                                          // sounds
+            self.buffer[self.buffer_at + 1] = r * 0x3fff;
             self.buffer_at += 2;
 
             if self.buffer_at >= BUFFER_SIZE {
@@ -186,14 +199,22 @@ impl Envelope {
 
 impl Channel1 {
     fn step(&mut self) {
-        self.freq_timer -= 1;
-        if self.freq_timer == 0 {
-            self.freq_timer = (2048 - self.period) * 4;
-            self.duty_pos = (self.duty_pos + 1) % 8;
+        if core::mem::replace(&mut self.triggered, false) {
+            self.active = true;
+        }
+
+        if self.active {
+            self.freq_timer -= 1;
+            if self.freq_timer == 0 {
+                self.freq_timer = (2048 - self.period) * 4;
+                self.duty_pos = (self.duty_pos + 1) % 8;
+            }
         }
     }
 
     fn get_amp(&self) -> (i16, i16) {
+        if !self.active { return (0, 0); }
+
         let amp = (SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1;
         (amp as i16, amp as i16)
     }

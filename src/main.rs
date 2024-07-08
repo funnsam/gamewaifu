@@ -23,13 +23,20 @@ fn main() {
             let keys = Arc::clone(&keys);
             thread::spawn(move || {
                 let audio = RaylibAudio::init_audio_device().unwrap();
-                ::core::hint::black_box(|| unsafe { raylib::ffi::SetAudioStreamBufferSizeDefault(gb::apu::BUFFER_SIZE as i32 * 2); })();
+                unsafe { ::core::hint::black_box(raylib::ffi::SetAudioStreamBufferSizeDefault)(gb::apu::BUFFER_SIZE as _); }
                 let mut stream = audio.new_audio_stream(gb::apu::SAMPLE_RATE as _, 16, 2);
                 stream.play();
 
-                let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| stream.update(buf)), keys);
+                let mut pcm = Vec::<u8>::new();
+
+                let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
+                    // while !stream.is_processed() {}
+                    // unsafe { raylib::ffi::UpdateAudioStream(*stream, buf.as_ptr() as *const ::core::ffi::c_void, gb::apu::FRAME_COUNT as _); }
+                    pcm.extend(buf.iter().step_by(2).flat_map(|v| v.to_le_bytes()));
+                }), keys);
 
                 run_emu(gb);
+                std::fs::write("pcm", pcm).unwrap();
             });
         }
 
@@ -229,7 +236,7 @@ fn run_emu(mut gb: gb::Gameboy) {
     let mut dur = Duration::new(0, 0);
     let t_cycle = Duration::from_secs_f64(1.0 / gb::CLOCK_HZ as f64);
 
-    loop {
+    for _ in 0..gb::CLOCK_HZ * 7 {
         gb.step();
 
         if !BURST.load(Ordering::Relaxed) {
