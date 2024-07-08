@@ -11,6 +11,8 @@ pub struct Apu<'a> {
     callback: Callback<'a>,
 
     output_timer: usize,
+    seq_timer: usize,
+    last_div_edge: bool,
 
     enable: bool,
 
@@ -71,6 +73,8 @@ impl<'a> Apu<'a> {
             callback,
 
             output_timer: 0,
+            seq_timer: 0,
+            last_div_edge: false,
 
             enable: false,
             volume: (0, 0),
@@ -82,9 +86,35 @@ impl<'a> Apu<'a> {
         }
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self, div_edge: bool) {
         if !self.enable {
             return self.write(|_| (0, 0));
+        }
+
+        if core::mem::replace(&mut self.last_div_edge, div_edge) && !div_edge {
+            self.seq_timer = (self.seq_timer + 1) % 8;
+            let (len, env, sweep) = [
+                (true, false, false),
+                (false, false, false),
+                (true, false, true),
+                (false, false, false),
+                (true, false, false),
+                (false, false, false),
+                (true, false, true),
+                (false, true, false),
+            ][self.seq_timer];
+
+            if len {
+                self.ch1.step_len();
+            }
+
+            if env {
+                self.ch1.step_env();
+            }
+
+            if sweep {
+                self.ch1.step_sweep();
+            }
         }
 
         self.ch1.step();

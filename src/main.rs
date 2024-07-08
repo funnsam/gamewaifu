@@ -236,7 +236,7 @@ fn run_emu(mut gb: gb::Gameboy) {
     let mut dur = Duration::new(0, 0);
     let t_cycle = Duration::from_secs_f64(1.0 / gb::CLOCK_HZ as f64);
 
-    for _ in 0..gb::CLOCK_HZ * 7 {
+    for _ in 0..gb::CLOCK_HZ * 20 {
         gb.step();
 
         if !BURST.load(Ordering::Relaxed) {
