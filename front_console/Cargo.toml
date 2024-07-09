@@ -7,3 +7,5 @@ edition = "2021"
 gb = { path = "../gb" }
 clap = { version = "4.5.7", features = ["derive"] }
 ctrlc = "3.4.4"
+rodio = { version = "0.19", default-features = false }
+termion = "4.0.2"

@@ -5,6 +5,8 @@ use raylib::{ffi::Vector2, prelude::*};
 
 mod args;
 
+const BURST_CYCLES: usize = gb::CLOCK_HZ / 60;
+
 fn main() {
     let (mut rl, thread) = raylib::init()
         .size(640, 570)
@@ -98,34 +100,24 @@ fn main() {
 
 static BURST: AtomicBool = AtomicBool::new(false);
 
-fn run_emu(mut gb: gb::Gameboy, run_for: Option<usize>) {
+fn run_emu(mut gb: gb::Gameboy) {
     use std::time::*;
 
-    let mut start = Instant::now();
     let mut dur = Duration::new(0, 0);
-    let t_cycle = Duration::from_secs_f64(1.0 / gb::CLOCK_HZ as f64);
 
-    let mut cycle = || {
-        gb.step();
+    loop {
+        let start = Instant::now();
+        for _ in 0..BURST_CYCLES { gb.step(); }
 
         if !BURST.load(Ordering::Relaxed) {
-            dur += t_cycle;
+            dur += Duration::from_secs_f64(BURST_CYCLES as f64 / gb::CLOCK_HZ as f64);
             dur = dur.saturating_sub(start.elapsed());
 
-            if dur.as_millis() > 3 {
+            if dur.as_millis() > 5 {
                 thread::sleep(dur);
                 dur = Duration::new(0, 0);
             }
         }
-
-        start = Instant::now();
-    };
-
-    if let Some(f) = run_for {
-        for _ in 0..gb::CLOCK_HZ.checked_mul(f).unwrap() { cycle(); }
-        println!("ran {f}s");
-    } else {
-        loop { cycle(); }
     }
 }
 
@@ -144,14 +136,8 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     {
         let gb_fb = Arc::clone(&gb_fb);
         let keys = Arc::clone(&keys);
-        let run_for = args.run_for.clone();
 
         thread::spawn(move || {
-            // let audio = RaylibAudio::init_audio_device().unwrap();
-            // unsafe { ::core::hint::black_box(raylib::ffi::SetAudioStreamBufferSizeDefault)(gb::apu::BUFFER_SIZE as _); }
-            // let mut stream = audio.new_audio_stream(gb::apu::SAMPLE_RATE as _, 16, 2);
-            // stream.play();
-
             let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
             let sink = rodio::Sink::try_new(&st_handle).unwrap();
 
@@ -173,15 +159,16 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
             // wav.extend(0_u32.to_le_bytes());
 
             let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
-                // unsafe { raylib::ffi::UpdateAudioStream(*stream, buf.as_ptr() as *const ::core::ffi::c_void, gb::apu::FRAME_COUNT as _); }
+                if sink.len() > 3 {
+                    for _ in 0..sink.len() { sink.skip_one(); }
+                }
 
-                sink.clear();
                 sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
 
                 // wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
             }), keys);
 
-            run_emu(gb, run_for);
+            run_emu(gb);
 
             // let wav_len = wav.len();
             // wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());

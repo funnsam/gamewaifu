@@ -1,20 +1,28 @@
 use std::{sync::{atomic::*, *}, thread};
 
 use clap::Parser;
+use termion::{input::TermRead, raw::IntoRawMode};
 
 mod args;
+
+const BURST_CYCLES: usize = gb::CLOCK_HZ / 60;
+
+fn exit() {
+    STOP.store(true, Ordering::Relaxed);
+    std::thread::sleep_ms(1000);
+    println!("\x1b[0m\x1b[?25h\x1b[?1049l");
+    std::io::stdout().into_raw_mode().unwrap().suspend_raw_mode().unwrap();
+    std::process::exit(0);
+}
 
 fn main() {
     let args = args::Args::parse();
     let (gb_fb, keys) = init(&args);
 
+    std::io::stdout().into_raw_mode().unwrap().activate_raw_mode().unwrap();
+
     println!("\x1b[?25l\x1b[?1049h\x1b[2J");
-    let _ = ctrlc::set_handler(|| {
-        STOP.store(true, Ordering::Relaxed);
-        std::thread::sleep_ms(1000);
-        println!("\x1b[0m\x1b[?25h\x1b[?1049l");
-        std::process::exit(0);
-    });
+    let _ = ctrlc::set_handler(exit);
 
     let mut prev_pf_a = "";
     let mut prev_pf_b = "";
@@ -71,6 +79,38 @@ fn main() {
             println!();
         }
 
+        let mut du = 0;
+        let mut dd = 0;
+        let mut dl = 0;
+        let mut dr = 0;
+        let mut sa = 0;
+        let mut sb = 0;
+        let mut sl = 0;
+        let mut st = 0;
+
+        for k in std::io::stdin().keys() {
+            use termion::event::Key;
+
+            match k {
+                Ok(Key::Esc) => exit(),
+                Ok(Key::Char('w')) => du = 1,
+                Ok(Key::Char('s')) => dd = 1,
+                Ok(Key::Char('a')) => dl = 1,
+                Ok(Key::Char('d')) => dr = 1,
+                Ok(Key::Char('o')) => sa = 1,
+                Ok(Key::Char('i')) => sb = 1,
+                Ok(Key::Char('v')) => sl = 1,
+                Ok(Key::Char('b')) => st = 1,
+                _ => {},
+            }
+        }
+
+        keys.store(
+            dr | (dl << 1) | (du << 2) | (dd << 3)
+               | (sa << 4) | (sb << 5) | (sl << 6) | (st << 7),
+            Ordering::Relaxed
+        );
+
         if STOP.load(Ordering::Relaxed) { loop {} }
     }
 
@@ -105,28 +145,21 @@ static STOP: AtomicBool = AtomicBool::new(false);
 fn run_emu(mut gb: gb::Gameboy) {
     use std::time::*;
 
-    let mut start = Instant::now();
     let mut dur = Duration::new(0, 0);
-    let t_cycle = Duration::from_secs_f64(1.0 / gb::CLOCK_HZ as f64);
 
     loop {
-        gb.step();
+        let start = Instant::now();
+        for _ in 0..BURST_CYCLES { gb.step(); }
 
         if !BURST.load(Ordering::Relaxed) {
-            dur += t_cycle;
+            dur += Duration::from_secs_f64(BURST_CYCLES as f64 / gb::CLOCK_HZ as f64);
             dur = dur.saturating_sub(start.elapsed());
 
-            if dur.as_millis() > 3 {
+            if dur.as_millis() > 5 {
                 thread::sleep(dur);
                 dur = Duration::new(0, 0);
             }
         }
-
-        if STOP.load(Ordering::Relaxed) {
-            break;
-        }
-
-        start = Instant::now();
     }
 }
 
@@ -147,33 +180,18 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
         let keys = Arc::clone(&keys);
 
         thread::spawn(move || {
-            let mut wav = Vec::<u8>::new();
-            wav.extend(b"RIFF");
-            let file_size_idx = wav.len();
-            wav.extend(0_u32.to_le_bytes());
-            wav.extend(b"WAVE");
-            wav.extend(b"fmt ");
-            wav.extend(16_u32.to_le_bytes());
-            wav.extend(1_u16.to_le_bytes());
-            wav.extend(2_u16.to_le_bytes());
-            wav.extend((gb::apu::SAMPLE_RATE as u32).to_le_bytes());
-            wav.extend((gb::apu::SAMPLE_RATE as u32 * 16 * 2 / 8).to_le_bytes());
-            wav.extend(4_u16.to_le_bytes());
-            wav.extend(16_u16.to_le_bytes());
-            wav.extend(b"data");
-            let data_size_idx = wav.len();
-            wav.extend(0_u32.to_le_bytes());
+            let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
+            let sink = rodio::Sink::try_new(&st_handle).unwrap();
 
             let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
-                wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
+                if sink.len() > 3 {
+                    for _ in 0..sink.len() { sink.skip_one(); }
+                }
+
+                sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
             }), keys);
 
             run_emu(gb);
-
-            let wav_len = wav.len();
-            wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());
-            wav[data_size_idx..data_size_idx + 4].copy_from_slice(&((wav_len - data_size_idx - 4) as u32).to_le_bytes());
-            std::fs::write("audio.wav", wav).unwrap();
         });
     }
 

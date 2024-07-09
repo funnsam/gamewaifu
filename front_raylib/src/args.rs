@@ -10,6 +10,6 @@ pub struct Args {
     #[arg(long, hide = true)]
     pub waifu: bool,
 
-    #[arg(long)]
-    pub run_for: Option<usize>,
+    // #[arg(long)]
+    // pub run_for: Option<usize>,
 }
