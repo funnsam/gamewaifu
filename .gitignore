@@ -7,5 +7,5 @@ logs
 /dmg_boot.bin
 /blargg-tests
 /mooneye-tests
-/*.mp3
-/pcm
+*.mp3
+*.wav

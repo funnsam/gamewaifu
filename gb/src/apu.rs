@@ -1,12 +1,13 @@
 pub const SAMPLE_RATE: usize = 48000;
 pub const BUFFER_SIZE: usize = 1024;
+pub const FRAME_COUNT: usize = BUFFER_SIZE / 2;
 
 const SQ_WAVE_WAVEFORM: [u8; 4] = [0x01, 0x03, 0x0f, 0xfc];
 
 pub type Callback<'a> = Box<dyn FnMut(&[i16]) + 'a>;
 
 pub struct Apu<'a> {
-    buffer: [i16; BUFFER_SIZE],
+    buffer: [i16; BUFFER_SIZE], // 12 fix point
     buffer_at: usize,
     callback: Callback<'a>,
 
@@ -30,10 +31,17 @@ struct Channel1 {
     pub triggered: bool,
     pub hard_pan: (bool, bool),
 
+    pub sweep_pace: u8,
+    pub sweep_dir: bool, // false: increase, true: decrease
+    pub sweep_step: u8,
+    pub sweep_timer: u8,
+
     pub duty: u8,
-    pub timer: u8,
-    pub envelope: Envelope,
     pub period: u16,
+
+    pub envelope: Envelope,
+
+    pub length_timer: u8,
     pub length_en: bool,
 
     freq_timer: u16,
@@ -43,19 +51,57 @@ struct Channel1 {
 #[derive(Default)]
 struct Channel2 {
     pub active: bool,
+    pub triggered: bool,
     pub hard_pan: (bool, bool),
+
+    pub duty: u8,
+    pub period: u16,
+
+    pub envelope: Envelope,
+
+    pub length_timer: u8,
+    pub length_en: bool,
+
+    freq_timer: u16,
+    duty_pos: u8,
 }
 
 #[derive(Default)]
 struct Channel3 {
     pub active: bool,
+    pub dac_enable: bool,
+    pub triggered: bool,
     pub hard_pan: (bool, bool),
+
+    pub period: u16,
+
+    pub out_level: u8,
+    pub wave: [u8; 16],
+
+    pub length_timer: u16,
+    pub length_en: bool,
+
+    freq_timer: u16,
+    wave_pos: usize,
 }
 
 #[derive(Default)]
 struct Channel4 {
     pub active: bool,
+    pub triggered: bool,
     pub hard_pan: (bool, bool),
+
+    pub clock_shift: u8,
+    pub clock_div: u8,
+    pub width: bool,
+
+    pub envelope: Envelope,
+
+    pub length_timer: u8,
+    pub length_en: bool,
+
+    freq_timer: u16,
+    lfsr: u16,
 }
 
 #[derive(Default)]
@@ -63,6 +109,9 @@ struct Envelope {
     pub init_vol: u8,
     pub env_dir: bool, // false = decrease, true = increase
     pub pace: u8,
+
+    pub volume: u8,
+    pub pace_timer: u8,
 }
 
 impl<'a> Apu<'a> {
@@ -106,10 +155,15 @@ impl<'a> Apu<'a> {
 
             if len {
                 self.ch1.step_len();
+                self.ch2.step_len();
+                self.ch3.step_len();
+                self.ch4.step_len();
             }
 
             if env {
-                self.ch1.step_env();
+                self.ch1.envelope.step();
+                self.ch2.envelope.step();
+                self.ch4.envelope.step();
             }
 
             if sweep {
@@ -118,13 +172,28 @@ impl<'a> Apu<'a> {
         }
 
         self.ch1.step();
+        self.ch2.step();
+        self.ch3.step();
+        self.ch4.step();
 
         self.write(|s| {
-            let (l1, r1) = s.ch1.get_amp();
-            let l1 = if s.ch1.hard_pan.0 { l1 } else { 0 };
-            let r1 = if s.ch1.hard_pan.1 { r1 } else { 0 };
+            let c1 = s.ch1.get_amp();
+            let l1 = if s.ch1.hard_pan.0 { c1 } else { 0 };
+            let r1 = if s.ch1.hard_pan.1 { c1 } else { 0 };
 
-            (l1, r1)
+            let c2 = s.ch2.get_amp();
+            let l2 = if s.ch2.hard_pan.0 { c2 } else { 0 };
+            let r2 = if s.ch2.hard_pan.1 { c2 } else { 0 };
+
+            let c3 = s.ch3.get_amp();
+            let l3 = if s.ch3.hard_pan.0 { c3 } else { 0 };
+            let r3 = if s.ch3.hard_pan.1 { c3 } else { 0 };
+
+            let c4 = s.ch4.get_amp();
+            let l4 = if s.ch4.hard_pan.0 { c4 } else { 0 };
+            let r4 = if s.ch4.hard_pan.1 { c4 } else { 0 };
+
+            (l1 + l2 + l3 + l4, r1 + r2 + r3 + r4)
         });
     }
 
@@ -132,9 +201,8 @@ impl<'a> Apu<'a> {
         self.output_timer += 1;
         if self.output_timer % (crate::CLOCK_HZ / SAMPLE_RATE) == 0 {
             let (l, r) = cb(self);
-            self.buffer[self.buffer_at + 0] = l * 0x3fff; // NOTE: remove these when have more
-                                                          // sounds
-            self.buffer[self.buffer_at + 1] = r * 0x3fff;
+            self.buffer[self.buffer_at + 0] = l;
+            self.buffer[self.buffer_at + 1] = r;
             self.buffer_at += 2;
 
             if self.buffer_at >= BUFFER_SIZE {
@@ -166,12 +234,32 @@ impl<'a> Apu<'a> {
             },
             0xff24 => (self.volume.0 << 4) | self.volume.1, // NR50
 
-            0xff10 => 0, // NR10
-                         // TODO: sweep
+            0xff10 => { // NR10
+                (self.ch1.sweep_pace << 4)
+                    | ((self.ch1.sweep_dir as u8) << 3)
+                    | self.ch1.sweep_step
+            },
             0xff11 => self.ch1.duty << 6, // NR11
             0xff12 => self.ch1.envelope.to_bits(),
-            0xff13 => 0,
-            0xff14 => ((self.ch1.triggered as u8) << 7) | ((self.ch1.length_en as u8) << 6), // NR14
+            0xff14 => (self.ch1.length_en as u8) << 6, // NR14
+
+            0xff16 => self.ch2.duty << 6, // NR21
+            0xff17 => self.ch2.envelope.to_bits(), // NR22
+            0xff19 => (self.ch2.length_en as u8) << 6, // NR24
+
+            0xff1a => (self.ch3.dac_enable as u8) << 7, // NR30
+            0xff1c => self.ch3.out_level << 5, // NR32
+            0xff1e => (self.ch3.length_en as u8) << 6, // NR34
+            0xff30..=0xff3f => self.ch3.wave[(addr - 0xff30) as usize],
+
+            0xff21 => self.ch2.envelope.to_bits(), // NR42
+            0xff22 => { // NR43
+                (self.ch4.clock_shift << 4)
+                    | ((self.ch4.width as u8) << 3)
+                    | self.ch4.clock_div
+            },
+            0xff23 => (self.ch2.length_en as u8) << 6, // NR44
+
             _ => 0xff,
         }
     }
@@ -193,11 +281,15 @@ impl<'a> Apu<'a> {
                 self.volume.0 = (data >> 4) & 7;
                 self.volume.1 = (data >> 0) & 7;
             },
-            0xff10 => {}, // NR10
-                          // TODO: sweep
+
+            0xff10 => { // NR10
+                self.ch1.sweep_pace = (data & 0x70) >> 4;
+                self.ch1.sweep_dir = data & 8 != 0;
+                self.ch1.sweep_step = data & 7;
+            },
             0xff11 => { // NR11
                 self.ch1.duty = data >> 6;
-                self.ch1.timer = data & 0x3f;
+                self.ch1.length_timer = 64 - data & 0x3f;
             },
             0xff12 => self.ch1.envelope.update_from_bits(data), // NR12
             0xff13 => { // NR13
@@ -210,6 +302,49 @@ impl<'a> Apu<'a> {
                 self.ch1.length_en = data & 0x40 != 0;
                 self.ch1.triggered = data & 0x80 != 0;
             },
+
+            0xff16 => { // NR21
+                self.ch2.duty = data >> 6;
+                self.ch2.length_timer = 64 - data & 0x3f;
+            },
+            0xff17 => self.ch2.envelope.update_from_bits(data), // NR22
+            0xff18 => { // NR23
+                self.ch2.period &= !0xff;
+                self.ch2.period |= data as u16;
+            },
+            0xff19 => { // NR24
+                self.ch2.period &= 0xff;
+                self.ch2.period |= (data as u16 & 7) << 8;
+                self.ch2.length_en = data & 0x40 != 0;
+                self.ch2.triggered = data & 0x80 != 0;
+            },
+
+            0xff1a => self.ch3.dac_enable = data & 0x80 != 0, // NR30
+            0xff1b => self.ch3.length_timer = 256 - data as u16, // NR31
+            0xff1c => self.ch3.out_level = (data & 0x60) >> 5, // NR32
+            0xff1d => { // NR33
+                self.ch3.period &= !0xff;
+                self.ch3.period |= data as u16;
+            },
+            0xff1e => { // NR34
+                self.ch3.period &= 0xff;
+                self.ch3.period |= (data as u16 & 7) << 8;
+                self.ch3.length_en = data & 0x40 != 0;
+            },
+            0xff30..=0xff3f => self.ch3.wave[(addr - 0xff30) as usize] = data,
+
+            0xff20 => self.ch4.length_timer = 64 - data & 0x3f, // NR41
+            0xff21 => self.ch4.envelope.update_from_bits(data), // NR42
+            0xff22 => { // NR43
+                self.ch4.clock_shift = data >> 4;
+                self.ch4.width = data & 8 != 0;
+                self.ch4.clock_div = data & 7;
+            },
+            0xff23 => { // NR44
+                self.ch4.length_en = data & 0x40 != 0;
+                self.ch4.triggered = data & 0x80 != 0;
+            },
+
             _ => {},
         }
     }
@@ -224,6 +359,8 @@ impl Envelope {
         self.init_vol = data >> 4;
         self.env_dir = data & 8 != 0;
         self.pace = data & 7;
+
+        self.volume = self.init_vol;
     }
 }
 
@@ -231,6 +368,9 @@ impl Channel1 {
     fn step(&mut self) {
         if core::mem::replace(&mut self.triggered, false) {
             self.active = true;
+            self.envelope.pace_timer = self.envelope.pace;
+            self.envelope.volume = self.envelope.init_vol;
+            if self.length_timer == 0 { self.length_timer = 64; }
         }
 
         if self.active {
@@ -242,10 +382,164 @@ impl Channel1 {
         }
     }
 
-    fn get_amp(&self) -> (i16, i16) {
-        if !self.active { return (0, 0); }
+    fn step_len(&mut self) {
+        if self.active && self.length_en {
+            self.length_timer -= 1;
+            self.active = self.length_timer != 0;
+        }
+    }
 
-        let amp = (SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1;
-        (amp as i16, amp as i16)
+    fn step_sweep(&mut self) {
+        if self.sweep_timer > 0 { self.sweep_timer -= 1; }
+        if self.sweep_timer != 0 || self.sweep_pace == 0 { return; }
+
+        self.sweep_timer = self.sweep_pace;
+
+        let mod_freq = self.period >> self.sweep_step;
+        let new = if !self.sweep_dir { self.period + mod_freq } else { self.period - mod_freq };
+
+        if new <= 0x7ff {
+            self.period = new;
+        } else {
+            self.active = false;
+        }
+    }
+
+    fn get_amp(&self) -> i16 {
+        if !self.active { return 0; }
+
+        let amp = ((SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1) * self.envelope.volume;
+        let amp = amp as i16 * 0x222 - 0x1000;
+        amp
+    }
+}
+
+impl Channel2 {
+    fn step(&mut self) {
+        if core::mem::replace(&mut self.triggered, false) {
+            self.active = true;
+            self.envelope.pace_timer = self.envelope.pace;
+            self.envelope.volume = self.envelope.init_vol;
+            if self.length_timer == 0 { self.length_timer = 64; }
+        }
+
+        if self.active {
+            self.freq_timer -= 1;
+            if self.freq_timer == 0 {
+                self.freq_timer = (2048 - self.period) * 4;
+                self.duty_pos = (self.duty_pos + 1) % 8;
+            }
+        }
+    }
+
+    fn step_len(&mut self) {
+        if self.active && self.length_en {
+            self.length_timer -= 1;
+            self.active = self.length_timer != 0;
+        }
+    }
+
+    fn get_amp(&self) -> i16 {
+        if !self.active { return 0; }
+
+        let amp = ((SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1) * self.envelope.volume;
+        let amp = amp as i16 * 0x222 - 0x1000;
+        amp
+    }
+}
+
+impl Channel3 {
+    fn step(&mut self) {
+        if core::mem::replace(&mut self.triggered, false) {
+            self.active = true;
+            if self.length_timer == 0 { self.length_timer = 256; }
+        }
+
+        if self.active {
+            self.freq_timer -= 1;
+            if self.freq_timer == 0 {
+                self.freq_timer = (2048 - self.period) * 4;
+                self.wave_pos = (self.wave_pos + 1) % 32;
+            }
+        }
+    }
+
+    fn step_len(&mut self) {
+        if self.active && self.length_en {
+            self.length_timer -= 1;
+            self.active = self.length_timer != 0;
+        }
+    }
+
+    fn get_amp(&self) -> i16 {
+        if !self.active { return 0; }
+
+        let wa = self.wave[(self.wave_pos >> 1) as usize];
+        let wa = if self.wave_pos & 1 == 0 { wa >> 4 } else { wa & 0xf };
+
+        let amp = wa >> [4, 0, 1, 2][self.out_level as usize];
+        let amp = amp as i16 * 0x222 - 0x1000;
+        amp
+    }
+}
+
+impl Channel4 {
+    fn step(&mut self) {
+        if core::mem::replace(&mut self.triggered, false) {
+            self.active = true;
+            self.envelope.pace_timer = self.envelope.pace;
+            self.envelope.volume = self.envelope.init_vol;
+            if self.length_timer == 0 { self.length_timer = 64; }
+            self.lfsr = 0x7fff;
+        }
+
+        if self.active {
+            self.freq_timer -= 1;
+            if self.freq_timer == 0 {
+                self.freq_timer = [8, 16, 32, 48, 64, 80, 96, 112][self.clock_div as usize] << self.clock_shift;
+                let xor = (self.lfsr & 1) ^ ((self.lfsr & 2) >> 1);
+                self.lfsr = (self.lfsr >> 1) | (xor << 14);
+
+                if self.width {
+                    self.lfsr &= !(1 << 6);
+                    self.lfsr |= xor << 6;
+                }
+            }
+        }
+    }
+
+    fn step_len(&mut self) {
+        if self.active && self.length_en {
+            self.length_timer -= 1;
+            self.active = self.length_timer != 0;
+        }
+    }
+
+    fn get_amp(&self) -> i16 {
+        if !self.active { return 0; }
+
+        let amp = (self.lfsr as u8 & 1) * self.envelope.volume;
+        let amp = amp as i16 * 0x222 - 0x1000;
+        amp
+    }
+}
+
+impl Envelope {
+    fn step(&mut self) {
+        if self.pace != 0 {
+            if self.pace_timer > 0 {
+                self.pace_timer -= 1;
+            }
+
+            if self.pace_timer != 0 { return; }
+
+            self.pace_timer = self.pace;
+
+            if self.volume < 0xf && self.env_dir {
+                self.volume += 1;
+            } else if self.volume > 0x0 && !self.env_dir {
+                self.volume -= 1;
+            }
+        }
     }
 }
