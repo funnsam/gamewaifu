@@ -1,19 +1,2 @@
 [workspace]
-members = ["front_raylib", "gb", "sm83", "sm83/tester"]
-
-[package]
-name = "gamewaifu"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-gb = { path = "gb" }
-sm83 = { path = "sm83" }
-clap = { version = "4.5.7", features = ["derive"] }
-ctrlc = { version = "3.4.4", optional = true }
-
-[profile.dev]
-overflow-checks = false
-
-[features]
-console = ["dep:ctrlc"]
+members = ["front_console", "front_raylib", "gb", "sm83", "sm83/tester"]
