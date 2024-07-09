@@ -7,22 +7,16 @@ mod args;
 
 const BURST_CYCLES: usize = gb::CLOCK_HZ / 60;
 
-fn exit() {
-    STOP.store(true, Ordering::Relaxed);
-    std::thread::sleep_ms(1000);
-    println!("\x1b[0m\x1b[?25h\x1b[?1049l");
-    std::io::stdout().into_raw_mode().unwrap().suspend_raw_mode().unwrap();
-    std::process::exit(0);
-}
-
 fn main() {
     let args = args::Args::parse();
     let (gb_fb, keys) = init(&args);
 
-    std::io::stdout().into_raw_mode().unwrap().activate_raw_mode().unwrap();
+    let raw = termion::get_tty().unwrap().into_raw_mode().unwrap();
+    raw.activate_raw_mode().unwrap();
+
+    let mut in_keys = termion::async_stdin().keys();
 
     println!("\x1b[?25l\x1b[?1049h\x1b[2J");
-    let _ = ctrlc::set_handler(exit);
 
     let mut prev_pf_a = "";
     let mut prev_pf_b = "";
@@ -76,7 +70,7 @@ fn main() {
                 print!("{c}");
             }
 
-            println!();
+            println!("\r");
         }
 
         let mut du = 0;
@@ -88,11 +82,10 @@ fn main() {
         let mut sl = 0;
         let mut st = 0;
 
-        for k in std::io::stdin().keys() {
+        while let Some(k) = in_keys.next() {
             use termion::event::Key;
 
             match k {
-                Ok(Key::Esc) => exit(),
                 Ok(Key::Char('w')) => du = 1,
                 Ok(Key::Char('s')) => dd = 1,
                 Ok(Key::Char('a')) => dl = 1,
@@ -101,6 +94,15 @@ fn main() {
                 Ok(Key::Char('i')) => sb = 1,
                 Ok(Key::Char('v')) => sl = 1,
                 Ok(Key::Char('b')) => st = 1,
+                Ok(Key::Esc) => {
+                    STOP.store(true, Ordering::Relaxed);
+                    while STOP.load(Ordering::Relaxed) {}
+
+                    println!("\x1b[0m\x1b[?25h\x1b[?1049l");
+                    raw.suspend_raw_mode().unwrap();
+
+                    std::process::exit(0);
+                },
                 _ => {},
             }
         }
@@ -110,8 +112,6 @@ fn main() {
                | (sa << 4) | (sb << 5) | (sl << 6) | (st << 7),
             Ordering::Relaxed
         );
-
-        if STOP.load(Ordering::Relaxed) { loop {} }
     }
 
     const CHARS: [[char; 4]; 4] = [
@@ -147,7 +147,7 @@ fn run_emu(mut gb: gb::Gameboy) {
 
     let mut dur = Duration::new(0, 0);
 
-    loop {
+    while !STOP.load(Ordering::Relaxed) {
         let start = Instant::now();
         for _ in 0..BURST_CYCLES { gb.step(); }
 
@@ -161,6 +161,8 @@ fn run_emu(mut gb: gb::Gameboy) {
             }
         }
     }
+
+    STOP.store(false, Ordering::Relaxed);
 }
 
 fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
@@ -180,15 +182,20 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
         let keys = Arc::clone(&keys);
 
         thread::spawn(move || {
-            let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
-            let sink = rodio::Sink::try_new(&st_handle).unwrap();
+            #[cfg(feature = "audio")]
+            let sink = {
+                let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
+                rodio::Sink::try_new(&st_handle).unwrap()
+            };
 
             let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
-                if sink.len() > 3 {
-                    for _ in 0..sink.len() { sink.skip_one(); }
-                }
+                #[cfg(feature = "audio")] {
+                    if sink.len() > 3 {
+                        for _ in 0..sink.len() { sink.skip_one(); }
+                    }
 
-                sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
+                    sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
+                }
             }), keys);
 
             run_emu(gb);
