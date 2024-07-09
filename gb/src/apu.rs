@@ -330,6 +330,7 @@ impl<'a> Apu<'a> {
                 self.ch3.period &= 0xff;
                 self.ch3.period |= (data as u16 & 7) << 8;
                 self.ch3.length_en = data & 0x40 != 0;
+                self.ch3.triggered = data & 0x80 != 0;
             },
             0xff30..=0xff3f => self.ch3.wave[(addr - 0xff30) as usize] = data,
 

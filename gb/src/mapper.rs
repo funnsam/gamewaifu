@@ -115,6 +115,26 @@ impl Mapper {
             m => panic!("unknown mapper {m:02x}"),
         }
     }
+
+    pub fn set_sram(&mut self, sram: &[u8]) {
+        match self {
+            Self::None { .. } => {},
+            Self::Mbc1 { ram, .. }
+                | Self::Mbc3 { ram, .. }
+                | Self::Mbc5 { ram, .. }
+            => ram.copy_from_slice(sram),
+        }
+    }
+
+    pub fn get_sram(&self) -> Option<&[u8]> {
+        match self {
+            Self::None { .. } => None,
+            Self::Mbc1 { ram, .. }
+                | Self::Mbc3 { ram, .. }
+                | Self::Mbc5 { ram, .. }
+            => Some(&ram),
+        }
+    }
 }
 
 impl sm83::bus::Bus for Mapper {

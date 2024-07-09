@@ -71,6 +71,8 @@ fn main() {
             frame.height = 144;
             frame.buffer = std::borrow::Cow::Owned(gb_fb.iter().map(|v| v.load(Ordering::Relaxed)).collect());
             encoder.write_frame(&frame).unwrap();
+        } else if rl.is_key_pressed(KeyboardKey::KEY_Y) {
+            SAVE.store(true, Ordering::Relaxed);
         }
 
         BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
@@ -96,11 +98,15 @@ fn main() {
             l.copy_from_slice(&c);
         }
     }
+
+    SAVE.store(!rl.is_key_down(KeyboardKey::KEY_BACKSPACE), Ordering::Relaxed);
+    while SAVE.load(Ordering::Relaxed) {}
 }
 
 static BURST: AtomicBool = AtomicBool::new(false);
+static SAVE: AtomicBool = AtomicBool::new(false);
 
-fn run_emu(mut gb: gb::Gameboy) {
+fn run_emu(mut gb: gb::Gameboy, save_file: String) {
     use std::time::*;
 
     let mut dur = Duration::new(0, 0);
@@ -117,6 +123,15 @@ fn run_emu(mut gb: gb::Gameboy) {
                 thread::sleep(dur);
                 dur = Duration::new(0, 0);
             }
+        }
+
+        if SAVE.load(Ordering::Acquire) {
+            if let Some(sram) = gb.get_sram() {
+                std::fs::write(&save_file, sram).unwrap();
+            }
+
+            SAVE.store(false, Ordering::Release);
+            println!("Saved to {save_file}");
         }
     }
 }
@@ -136,6 +151,7 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
     {
         let gb_fb = Arc::clone(&gb_fb);
         let keys = Arc::clone(&keys);
+        let save_file = args.save_file.clone().unwrap_or(args.rom.to_string() + ".sav");
 
         thread::spawn(move || {
             let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
@@ -158,7 +174,7 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
             // let data_size_idx = wav.len();
             // wav.extend(0_u32.to_le_bytes());
 
-            let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
+            let mut gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
                 if sink.len() > 3 {
                     for _ in 0..sink.len() { sink.skip_one(); }
                 }
@@ -168,7 +184,12 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
                 // wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
             }), keys);
 
-            run_emu(gb);
+            if let Ok(sav) = std::fs::read(&save_file) {
+                gb.set_sram(&sav);
+                println!("Restored save file from {save_file}");
+            }
+
+            run_emu(gb, save_file);
 
             // let wav_len = wav.len();
             // wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());

@@ -7,6 +7,9 @@ pub struct Args {
     #[arg(short, long)]
     pub boot_rom: Option<String>,
 
+    #[arg(short, long)]
+    pub save_file: Option<String>,
+
     #[arg(long, hide = true)]
     pub waifu: bool,
 

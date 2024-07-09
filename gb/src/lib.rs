@@ -97,4 +97,7 @@ impl<'a> Gameboy<'a> {
 
         self.cpu.bus.keys = self.keys.load(Ordering::Relaxed);
     }
+
+    pub fn set_sram(&mut self, sram: &[u8]) { self.cpu.bus.mapper.set_sram(sram) }
+    pub fn get_sram(&self) -> Option<&[u8]> { self.cpu.bus.mapper.get_sram() }
 }
