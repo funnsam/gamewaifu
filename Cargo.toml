@@ -1,2 +1,3 @@
 [workspace]
 members = ["front_console", "front_raylib", "gb", "sm83", "sm83/tester"]
+resolver = "2"

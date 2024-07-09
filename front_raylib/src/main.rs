@@ -152,35 +152,41 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
             // let mut stream = audio.new_audio_stream(gb::apu::SAMPLE_RATE as _, 16, 2);
             // stream.play();
 
-            let mut wav = Vec::<u8>::new();
-            wav.extend(b"RIFF");
-            let file_size_idx = wav.len();
-            wav.extend(0_u32.to_le_bytes());
-            wav.extend(b"WAVE");
-            wav.extend(b"fmt ");
-            wav.extend(16_u32.to_le_bytes());
-            wav.extend(1_u16.to_le_bytes());
-            wav.extend(2_u16.to_le_bytes());
-            wav.extend((gb::apu::SAMPLE_RATE as u32).to_le_bytes());
-            wav.extend((gb::apu::SAMPLE_RATE as u32 * 16 * 2 / 8).to_le_bytes());
-            wav.extend(4_u16.to_le_bytes());
-            wav.extend(16_u16.to_le_bytes());
-            wav.extend(b"data");
-            let data_size_idx = wav.len();
-            wav.extend(0_u32.to_le_bytes());
+            let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
+            let sink = rodio::Sink::try_new(&st_handle).unwrap();
+
+            // let mut wav = Vec::<u8>::new();
+            // wav.extend(b"RIFF");
+            // let file_size_idx = wav.len();
+            // wav.extend(0_u32.to_le_bytes());
+            // wav.extend(b"WAVE");
+            // wav.extend(b"fmt ");
+            // wav.extend(16_u32.to_le_bytes());
+            // wav.extend(1_u16.to_le_bytes());
+            // wav.extend(2_u16.to_le_bytes());
+            // wav.extend((gb::apu::SAMPLE_RATE as u32).to_le_bytes());
+            // wav.extend((gb::apu::SAMPLE_RATE as u32 * 16 * 2 / 8).to_le_bytes());
+            // wav.extend(4_u16.to_le_bytes());
+            // wav.extend(16_u16.to_le_bytes());
+            // wav.extend(b"data");
+            // let data_size_idx = wav.len();
+            // wav.extend(0_u32.to_le_bytes());
 
             let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
-                // while !stream.is_processed() {}
                 // unsafe { raylib::ffi::UpdateAudioStream(*stream, buf.as_ptr() as *const ::core::ffi::c_void, gb::apu::FRAME_COUNT as _); }
-                wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
+
+                sink.clear();
+                sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
+
+                // wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
             }), keys);
 
             run_emu(gb, run_for);
 
-            let wav_len = wav.len();
-            wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());
-            wav[data_size_idx..data_size_idx + 4].copy_from_slice(&((wav_len - data_size_idx - 4) as u32).to_le_bytes());
-            std::fs::write("audio.wav", wav).unwrap();
+            // let wav_len = wav.len();
+            // wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());
+            // wav[data_size_idx..data_size_idx + 4].copy_from_slice(&((wav_len - data_size_idx - 4) as u32).to_le_bytes());
+            // std::fs::write("audio.wav", wav).unwrap();
         });
     }
 
