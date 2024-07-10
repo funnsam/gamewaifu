@@ -14,8 +14,7 @@ pub struct Sm83<Bus: bus::Bus> {
     cycles: usize,
     after_ei: bool,
 
-    int_ie: u8,
-    int_if: u8,
+    ints: InterruptManager,
 
     pub div: usize,
 
@@ -133,8 +132,10 @@ impl<B: bus::Bus> Sm83<B> {
             cycles: 1,
             after_ei: false,
 
-            int_ie: 0,
-            int_if: 0,
+            ints: InterruptManager {
+                pending: 0,
+                enabled: 0,
+            },
 
             div: 0,
 
@@ -182,7 +183,6 @@ impl<B: bus::Bus> Sm83<B> {
         }
 
         self.cycles -= 1;
-        self.div += 1;
         if self.cycles != 0 {
             return;
         }
@@ -329,8 +329,8 @@ impl<B: bus::Bus> Sm83<B> {
                 self.store_bus_u8(a, d);
             },
             (3, 5, 0, _, _) => { // add sp, s8
-                self.incr_cycles(2); // goddamn sharp
                 let e = self.fetch_u8();
+                self.incr_cycles(2);
                 let sp = self.sp;
                 self.sp += e as i8 as u16;
 
@@ -343,9 +343,9 @@ impl<B: bus::Bus> Sm83<B> {
                 self.store_reg_r8(A, d);
             },
             (3, 7, 0, _, _) => { // ld hl, sp + s8
-                self.incr_cycles(1);
                 let e = self.fetch_u8();
                 self.store_reg_r16(HL, self.sp + e as i8 as u16);
+                self.incr_cycles(1);
 
                 let (_, c) = (self.sp as u8).overflowing_add(e as u8);
                 let sp = self.sp;
@@ -531,7 +531,7 @@ impl<B: bus::Bus> Sm83<B> {
     }
 
     fn check_interrupts(&mut self) {
-        let i = self.int_if & self.int_ie;
+        let i = self.ints.pending & self.ints.enabled;
 
         if i != 0 {
             self.mode = Mode::Normal;
@@ -543,33 +543,38 @@ impl<B: bus::Bus> Sm83<B> {
 
         for b in 0..4 {
             if (i >> b) & 1 != 0 {
-                self.int_if ^= 1 << b;
+                self.ints.pending ^= 1 << b;
                 self.ime = false;
-                self.call(0x40 + b * 8);
                 self.incr_cycles(2);
+                self.call(0x40 + b * 8);
                 return;
             }
         }
     }
 
-    pub fn interrupt(&mut self, i: u8) {
-        self.int_if |= 1 << i;
-    }
-
     fn incr_cycles(&mut self, t: usize) {
         self.cycles += 4 * t;
+
+        for _ in 0..4 * t {
+            self.bus.external_step(self.div, &mut self.ints);
+            self.div += 1;
+        }
     }
 
     fn push(&mut self, v: u16) {
-        self.sp -= 2;
         self.incr_cycles(1);
-        self.store_bus_u16_rev(self.sp, v);
+        self.sp -= 1;
+        self.store_bus_u8(self.sp, (v >> 8) as u8);
+        self.sp -= 1;
+        self.store_bus_u8(self.sp, v as u8);
     }
 
     fn pop(&mut self) -> u16 {
-        let v = self.load_bus_u16(self.sp);
-        self.sp += 2;
-        v
+        let l = self.load_bus_u8(self.sp);
+        self.sp += 1;
+        let h = self.load_bus_u8(self.sp);
+        self.sp += 1;
+        ((h as u16) << 8) | (l as u16)
     }
 
     fn cond_check(&self, n: u8) -> bool {
@@ -658,8 +663,8 @@ impl<B: bus::Bus> Sm83<B> {
         #[cfg(not(feature = "test"))]
         match a {
             0xff04 => (self.div >> 8) as u8,
-            0xff0f => self.int_if,
-            0xffff => self.int_ie,
+            0xff0f => self.ints.pending,
+            0xffff => self.ints.enabled,
             _ => self.bus.load(a),
         }
 
@@ -679,8 +684,8 @@ impl<B: bus::Bus> Sm83<B> {
         #[cfg(not(feature = "test"))]
         match a {
             0xff04 => self.div = 0,
-            0xff0f => self.int_if = d,
-            0xffff => self.int_ie = d,
+            0xff0f => self.ints.pending = d,
+            0xffff => self.ints.enabled = d,
             _ => self.bus.store(a, d),
         }
 
@@ -691,11 +696,6 @@ impl<B: bus::Bus> Sm83<B> {
     fn store_bus_u16(&mut self, a: u16, d: u16) {
         self.store_bus_u8(a, d as u8);
         self.store_bus_u8(a + 1, (d >> 8) as u8);
-    }
-
-    fn store_bus_u16_rev(&mut self, a: u16, d: u16) {
-        self.store_bus_u8(a + 1, (d >> 8) as u8);
-        self.store_bus_u8(a, d as u8);
     }
 
     fn load_reg_r8(&mut self, r: u8) -> u8 {
@@ -797,5 +797,16 @@ impl<B: bus::Bus> Sm83<B> {
             },
             _ => panic!(),
         }
+    }
+}
+
+pub struct InterruptManager {
+    pending: u8,
+    enabled: u8,
+}
+
+impl InterruptManager {
+    pub fn interrupt(&mut self, i: u8) {
+        self.pending |= 1 << i;
     }
 }

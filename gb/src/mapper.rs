@@ -135,10 +135,8 @@ impl Mapper {
             => Some(&ram),
         }
     }
-}
 
-impl sm83::bus::Bus for Mapper {
-    fn load(&mut self, a: u16) -> u8 {
+    pub(crate) fn load(&mut self, a: u16) -> u8 {
         match self {
             Self::None { rom, ram } => match a {
                 0x0000..=0x7fff => rom.get(a as usize).copied().unwrap_or(0xff),
@@ -178,7 +176,7 @@ impl sm83::bus::Bus for Mapper {
         }
     }
 
-    fn store(&mut self, a: u16, d: u8) {
+    pub(crate) fn store(&mut self, a: u16, d: u8) {
         match self {
             Self::None { rom: _, ram } => match a {
                 0xa000..=0xbfff => ram.get_mut(a as usize - 0xa000).map(|r| *r = d).unwrap_or(()),
