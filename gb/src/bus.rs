@@ -70,7 +70,7 @@ impl sm83::bus::Bus for Bus<'_> {
             0xff46 => self.oam_dma_at.0,
             0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.load(a),
             0xff10..=0xff3f => self.apu.load(a),
-            0xff00..=0xff7f => { eprintln!("io {a:04x}"); 0 },
+            0xff00..=0xff7f => 0xff,
             0xff80..=0xfffe => self.hram[a as usize - 0xff80],
             0xffff => unreachable!(),
         }
@@ -95,7 +95,7 @@ impl sm83::bus::Bus for Bus<'_> {
             0xff46 => self.oam_dma_at = (d, 0),
             0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.store(a, d),
             0xff10..=0xff3f => self.apu.store(a, d),
-            0xff00..=0xff7f => eprintln!("io {a:04x} {d:02x}"),
+            0xff00..=0xff7f => {},
             0xff80..=0xfffe => self.hram[a as usize - 0xff80] = d,
             0xffff => unreachable!(),
         }

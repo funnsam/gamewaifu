@@ -23,6 +23,7 @@ pub struct Apu<'a> {
     ch4: Channel4,
 
     volume: (u8, u8),
+    vin_enabled: (bool, bool),
 }
 
 #[derive(Default)]
@@ -34,10 +35,12 @@ struct Channel1 {
     pub sweep_pace: u8,
     pub sweep_dir: bool, // false: increase, true: decrease
     pub sweep_step: u8,
-    pub sweep_timer: u8,
+    pub sweep_enabled: bool,
+    sweep_timer: u8,
 
     pub duty: u8,
     pub period: u16,
+    internal_period: u16,
 
     pub envelope: Envelope,
 
@@ -126,12 +129,14 @@ impl<'a> Apu<'a> {
             last_div_edge: false,
 
             enable: false,
-            volume: (0, 0),
 
             ch1: Channel1::default(),
             ch2: Channel2::default(),
             ch3: Channel3::default(),
             ch4: Channel4::default(),
+
+            volume: (0, 0),
+            vin_enabled: (false, false),
         }
     }
 
@@ -220,6 +225,7 @@ impl<'a> Apu<'a> {
                     | ((self.ch3.active as u8) << 2)
                     | ((self.ch2.active as u8) << 1)
                     | ((self.ch1.active as u8) << 0)
+                    | 0x70
             },
             0xff25 => { // NR51
                 0
@@ -232,41 +238,63 @@ impl<'a> Apu<'a> {
                     | ((self.ch1.hard_pan.0 as u8) << 4)
                     | ((self.ch1.hard_pan.1 as u8) << 0)
             },
-            0xff24 => (self.volume.0 << 4) | self.volume.1, // NR50
+            0xff24 => { // NR50
+                ((self.vin_enabled.0 as u8) << 7)
+                    | ((self.vin_enabled.1 as u8) << 3)
+                    | (self.volume.0 << 4)
+                    | self.volume.1
+            },
 
             0xff10 => { // NR10
                 (self.ch1.sweep_pace << 4)
                     | ((self.ch1.sweep_dir as u8) << 3)
                     | self.ch1.sweep_step
+                    | 0x80
             },
-            0xff11 => self.ch1.duty << 6, // NR11
-            0xff12 => self.ch1.envelope.to_bits(),
-            0xff14 => (self.ch1.length_en as u8) << 6, // NR14
+            0xff11 => (self.ch1.duty << 6) | 0x3f, // NR11
+            0xff12 => self.ch1.envelope.to_bits(), // NR12
+            0xff14 => ((self.ch1.length_en as u8) << 6) | 0xbf, // NR14
 
-            0xff16 => self.ch2.duty << 6, // NR21
+            0xff16 => (self.ch2.duty << 6) | 0x3f, // NR21
             0xff17 => self.ch2.envelope.to_bits(), // NR22
-            0xff19 => (self.ch2.length_en as u8) << 6, // NR24
+            0xff19 => ((self.ch2.length_en as u8) << 6) | 0xbf, // NR24
 
-            0xff1a => (self.ch3.dac_enabled as u8) << 7, // NR30
-            0xff1c => self.ch3.out_level << 5, // NR32
-            0xff1e => (self.ch3.length_en as u8) << 6, // NR34
+            0xff1a => ((self.ch3.dac_enabled as u8) << 7) | 0x7f, // NR30
+            0xff1c => (self.ch3.out_level << 5) | 0x9f, // NR32
+            0xff1e => ((self.ch3.length_en as u8) << 6) | 0xbf, // NR34
             0xff30..=0xff3f => self.ch3.wave[(addr - 0xff30) as usize],
 
-            0xff21 => self.ch2.envelope.to_bits(), // NR42
+            0xff21 => self.ch4.envelope.to_bits(), // NR42
             0xff22 => { // NR43
                 (self.ch4.clock_shift << 4)
                     | ((self.ch4.width as u8) << 3)
                     | self.ch4.clock_div
             },
-            0xff23 => (self.ch2.length_en as u8) << 6, // NR44
+            0xff23 => ((self.ch4.length_en as u8) << 6) | 0xbf, // NR44
 
             _ => 0xff,
         }
     }
 
     pub fn store(&mut self, addr: u16, data: u8) {
+        if !self.enable && !matches!(addr, 0xff26 | 0xff30..=0xff3f) { return; }
+
         match addr {
-            0xff26 => self.enable = data & 0x80 != 0, // NR52
+            0xff26 => { // NR52
+                self.enable = data & 0x80 != 0;
+
+                if !self.enable {
+                    self.ch1 = Channel1::default();
+                    self.ch2 = Channel2::default();
+                    let wave = self.ch3.wave.clone();
+                    self.ch3 = Channel3::default();
+                    self.ch3.wave = wave;
+                    self.ch4 = Channel4::default();
+
+                    self.volume = (0, 0);
+                    self.vin_enabled = (false, false);
+                }
+            },
             0xff25 => { // NR51
                 self.ch4.hard_pan.0 = data & 0x80 != 0;
                 self.ch4.hard_pan.1 = data & 0x08 != 0;
@@ -280,6 +308,8 @@ impl<'a> Apu<'a> {
             0xff24 => { // NR50
                 self.volume.0 = (data >> 4) & 7;
                 self.volume.1 = (data >> 0) & 7;
+                self.vin_enabled.0 = (data & 0x80) != 0;
+                self.vin_enabled.1 = (data & 0x08) != 0;
             },
 
             0xff10 => { // NR10
@@ -290,8 +320,9 @@ impl<'a> Apu<'a> {
             0xff11 => { // NR11
                 self.ch1.duty = data >> 6;
                 self.ch1.length_timer = 64 - data & 0x3f;
+                if self.ch1.length_timer == 0 { self.ch1.length_timer = 64; }
             },
-            0xff12 => self.ch1.envelope.update_from_bits(data), // NR12
+            0xff12 => self.ch1.active &= self.ch1.envelope.update_from_bits(data), // NR12
             0xff13 => { // NR13
                 self.ch1.period &= !0xff;
                 self.ch1.period |= data as u16;
@@ -306,8 +337,9 @@ impl<'a> Apu<'a> {
             0xff16 => { // NR21
                 self.ch2.duty = data >> 6;
                 self.ch2.length_timer = 64 - data & 0x3f;
+                if self.ch2.length_timer == 0 { self.ch2.length_timer = 64; }
             },
-            0xff17 => self.ch2.envelope.update_from_bits(data), // NR22
+            0xff17 => self.ch2.active &= self.ch2.envelope.update_from_bits(data), // NR22
             0xff18 => { // NR23
                 self.ch2.period &= !0xff;
                 self.ch2.period |= data as u16;
@@ -319,8 +351,14 @@ impl<'a> Apu<'a> {
                 self.ch2.triggered = data & 0x80 != 0;
             },
 
-            0xff1a => self.ch3.dac_enabled = data & 0x80 != 0, // NR30
-            0xff1b => self.ch3.length_timer = 256 - data as u16, // NR31
+            0xff1a => { // NR30
+                self.ch3.dac_enabled = data & 0x80 != 0;
+                self.ch3.active &= self.ch3.dac_enabled;
+            },
+            0xff1b => { // NR31
+                self.ch3.length_timer = 256 - data as u16;
+                if self.ch3.length_timer == 0 { self.ch3.length_timer = 256; }
+            },
             0xff1c => self.ch3.out_level = (data & 0x60) >> 5, // NR32
             0xff1d => { // NR33
                 self.ch3.period &= !0xff;
@@ -334,8 +372,11 @@ impl<'a> Apu<'a> {
             },
             0xff30..=0xff3f => self.ch3.wave[(addr - 0xff30) as usize] = data,
 
-            0xff20 => self.ch4.length_timer = 64 - data & 0x3f, // NR41
-            0xff21 => self.ch4.envelope.update_from_bits(data), // NR42
+            0xff20 => { // NR41
+                self.ch4.length_timer = 64 - data & 0x3f;
+                if self.ch4.length_timer == 0 { self.ch4.length_timer = 64; }
+            },
+            0xff21 => self.ch4.active &= self.ch4.envelope.update_from_bits(data), // NR42
             0xff22 => { // NR43
                 self.ch4.clock_shift = data >> 4;
                 self.ch4.width = data & 8 != 0;
@@ -356,53 +397,90 @@ impl Envelope {
         (self.init_vol << 4) | ((self.env_dir as u8) << 3) | self.pace
     }
 
-    pub fn update_from_bits(&mut self, data: u8) {
+    pub fn update_from_bits(&mut self, data: u8) -> bool {
         self.init_vol = data >> 4;
         self.env_dir = data & 8 != 0;
         self.pace = data & 7;
 
         self.volume = self.init_vol;
+
+        data & 0xf8 != 0
+    }
+
+    fn step(&mut self) {
+        if self.pace != 0 {
+            if self.pace_timer > 0 {
+                self.pace_timer -= 1;
+            }
+
+            if self.pace_timer != 0 { return; }
+
+            self.pace_timer = self.pace;
+
+            if self.volume < 0xf && self.env_dir {
+                self.volume += 1;
+            } else if self.volume > 0x0 && !self.env_dir {
+                self.volume -= 1;
+            }
+        }
     }
 }
 
 impl Channel1 {
     fn step(&mut self) {
-        if self.dac_enabled() && core::mem::replace(&mut self.triggered, false) && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() && !self.active {
             self.active = true;
             self.envelope.pace_timer = self.envelope.pace;
             self.envelope.volume = self.envelope.init_vol;
             if self.length_timer == 0 { self.length_timer = 64; }
+
+            self.internal_period = self.period;
+            self.sweep_enabled = self.sweep_pace != 0 || self.sweep_step != 0;
+            if self.sweep_step != 0 { self.calculate_sweep_next_freq(); }
         }
 
         if self.active {
             self.freq_timer -= 1;
             if self.freq_timer == 0 {
-                self.freq_timer = (2048 - self.period) * 4;
+                self.freq_timer = (2048 - self.internal_period) * 4;
                 self.duty_pos = (self.duty_pos + 1) % 8;
             }
         }
     }
 
     fn step_len(&mut self) {
-        if self.active && self.length_en {
-            self.length_timer -= 1;
-            self.active = self.length_timer != 0;
+        if self.length_en {
+            self.length_timer = self.length_timer.saturating_sub(1);
+            self.active &= self.length_timer != 0;
         }
     }
 
     fn step_sweep(&mut self) {
-        if self.sweep_timer > 0 { self.sweep_timer -= 1; }
-        if self.sweep_timer != 0 || self.sweep_pace == 0 { return; }
+        self.sweep_timer = self.sweep_timer.saturating_sub(1);
+        if self.sweep_timer != 0 { return; }
 
-        self.sweep_timer = self.sweep_pace;
+        self.sweep_timer = if self.sweep_pace != 0 { self.sweep_pace } else { 8 };
 
-        let mod_freq = self.period >> self.sweep_step;
-        let new = if !self.sweep_dir { self.period + mod_freq } else { self.period - mod_freq };
+        if self.sweep_enabled && self.sweep_pace != 0 {
+            self.calculate_sweep_next_freq().map(|p| {
+                if self.sweep_step != 0 {
+                    self.period = p;
+                    self.internal_period = p;
+                    self.calculate_sweep_next_freq();
+                }
+            });
+        }
+    }
+
+    fn calculate_sweep_next_freq(&mut self) -> Option<u16> {
+        let mod_freq = self.internal_period >> self.sweep_step;
+        let new = if !self.sweep_dir { self.internal_period + mod_freq } else { self.internal_period - mod_freq };
 
         if new <= 0x7ff {
-            self.period = new;
+            Some(new)
         } else {
             self.active = false;
+            None
         }
     }
 
@@ -414,12 +492,12 @@ impl Channel1 {
         amp
     }
 
-    fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.pace != 0 }
+    fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.env_dir }
 }
 
 impl Channel2 {
     fn step(&mut self) {
-        if self.dac_enabled() && core::mem::replace(&mut self.triggered, false) && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() && !self.active {
             self.active = true;
             self.envelope.pace_timer = self.envelope.pace;
             self.envelope.volume = self.envelope.init_vol;
@@ -436,9 +514,9 @@ impl Channel2 {
     }
 
     fn step_len(&mut self) {
-        if self.active && self.length_en {
-            self.length_timer -= 1;
-            self.active = self.length_timer != 0;
+        if self.length_en {
+            self.length_timer = self.length_timer.saturating_sub(1);
+            self.active &= self.length_timer != 0;
         }
     }
 
@@ -450,12 +528,12 @@ impl Channel2 {
         amp
     }
 
-    fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.pace != 0 }
+    fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.env_dir }
 }
 
 impl Channel3 {
     fn step(&mut self) {
-        if self.dac_enabled && core::mem::replace(&mut self.triggered, false) && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled && !self.active {
             self.active = true;
             if self.length_timer == 0 { self.length_timer = 256; }
         }
@@ -470,9 +548,9 @@ impl Channel3 {
     }
 
     fn step_len(&mut self) {
-        if self.active && self.length_en {
-            self.length_timer -= 1;
-            self.active = self.length_timer != 0;
+        if self.length_en {
+            self.length_timer = self.length_timer.saturating_sub(1);
+            self.active &= self.length_timer != 0;
         }
     }
 
@@ -490,7 +568,7 @@ impl Channel3 {
 
 impl Channel4 {
     fn step(&mut self) {
-        if self.dac_enabled() && core::mem::replace(&mut self.triggered, false) && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() && !self.active {
             self.active = true;
             self.envelope.pace_timer = self.envelope.pace;
             self.envelope.volume = self.envelope.init_vol;
@@ -514,9 +592,9 @@ impl Channel4 {
     }
 
     fn step_len(&mut self) {
-        if self.active && self.length_en {
-            self.length_timer -= 1;
-            self.active = self.length_timer != 0;
+        if self.length_en {
+            self.length_timer = self.length_timer.saturating_sub(1);
+            self.active &= self.length_timer != 0;
         }
     }
 
@@ -528,25 +606,5 @@ impl Channel4 {
         amp
     }
 
-    fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.pace != 0 }
-}
-
-impl Envelope {
-    fn step(&mut self) {
-        if self.pace != 0 {
-            if self.pace_timer > 0 {
-                self.pace_timer -= 1;
-            }
-
-            if self.pace_timer != 0 { return; }
-
-            self.pace_timer = self.pace;
-
-            if self.volume < 0xf && self.env_dir {
-                self.volume += 1;
-            } else if self.volume > 0x0 && !self.env_dir {
-                self.volume -= 1;
-            }
-        }
-    }
+    fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.env_dir }
 }

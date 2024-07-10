@@ -68,7 +68,7 @@ impl<'a> Gameboy<'a> {
             self.cpu.interrupt(0);
             self.cpu.interrupt(1);
         });
-        self.cpu.bus.apu.step(self.cpu.div & 0x2000 != 0);
+        self.cpu.bus.apu.step(self.cpu.div & 0x1000 != 0);
 
         // oam dma
         let dma = self.cpu.bus.oam_dma_at;
