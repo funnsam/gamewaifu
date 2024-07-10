@@ -18,6 +18,7 @@ pub struct Ppu {
     wly: u8,
 
     hsync: usize,
+    stat_request: u8,
 }
 
 impl Ppu {
@@ -40,6 +41,7 @@ impl Ppu {
             wly: 0,
 
             hsync: 0,
+            stat_request: 0,
         }
     }
 
@@ -52,92 +54,38 @@ impl Ppu {
         let hsync = self.hsync;
         self.hsync = (self.hsync + 1) % 456;
 
-        match (hsync, self.ly) {
-            (455, _) => {},
+        let mode = self.get_mode();
+        let prev_req = self.stat_request;
 
-            (0, ..144) => return self.gen_stat(true, 0x20),
-            (252, ..144) => return self.gen_stat(true, 0x08),
-            (0, 144) => return self.gen_stat(true, 0x10),
+        self.stat_request(mode == 0, 0x08);
+        self.stat_request(mode == 1, 0x10);
+        self.stat_request(mode == 2, 0x20);
 
-            _ => return None,
+        if hsync != 455 {
+            return self.check_stat(prev_req);
         }
 
         let y = self.ly;
         self.ly = (self.ly + 1) % 154;
 
-        if y == 144 {
+        self.stat_request(self.ly == self.lyc || (self.ly == 153 && self.lyc == 0 && self.hsync >= 4), 0x40);
+
+        if y > 144 {
+            return self.check_stat(prev_req);
+        } else if y == 144 {
             self.wly = 0;
-            return Some(0);
-        } else if y >= 144 {
-            return self.gen_stat(self.ly == self.lyc, 0x40);
+            return Some(self.check_stat(prev_req).unwrap_or(0) << 1);
         }
 
         let mut strip_bg = [0; 160];
         let mut strip_ob = [(0, 0, false); 160];
         let mut buf = [0; 2];
 
-        let mut plot_bg = |x: usize, c: u8| if x < 160 {
-            strip_bg[x] = c;
-        };
-
-        let mut plot_ob = |x: usize, c: u8, pr: bool, p: u8| if x < 160 && strip_ob[x].0 == 0 {
-            strip_ob[x] = (c, p, pr);
-        };
-
-        if self.lcdc & 1 != 0 { // bg & window enable
-            let ty = (y + self.scroll.1) as usize / 8;
-            let iy = (y + self.scroll.1) as usize % 8;
-
-            let bg_tilemap_base = if self.lcdc & 8 == 0 { 0x1800 } else { 0x1c00 };
-            let tiledata_base = |lcdc: u8, tile: u8, iy: usize| {
-                if lcdc & 0x10 == 0 {
-                    (0x1000 + tile as i8 as isize * 16) as usize + iy * 2
-                } else {
-                    tile as usize * 16 + iy * 2
-                }
-            };
-
-            for sx in 0..21 {
-                let tx = (sx + self.scroll.0 / 8) as usize % 32;
-                let xo = (self.scroll.0 % 8) as u8;
-
-                let offset = bg_tilemap_base + tx + ty * 32;
-                let tile = self.vram[offset];
-
-                let (_, r) = self.vram.split_at(tiledata_base(self.lcdc, tile, iy));
-                let (r, _) = r.split_at(2);
-                buf.copy_from_slice(r);
-
-                for k in 0..8 {
-                    let x = sx * 8;
-                    let kb = 7 - k;
-                    let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
-                    plot_bg((x + k - xo) as _, c);
-                }
-            }
+        if self.lcdc & 1 != 0 {
+            self.render_bg(y, &mut strip_bg, &mut buf);
 
             if self.lcdc & 0x20 != 0 && self.window.0 <= 166 && self.window.1 <= y {
-                let wd_tilemap_base = if self.lcdc & 0x40 == 0 { 0x1800 } else { 0x1c00 };
-
-                let ty = self.wly as usize / 8;
-                let iy = self.wly as usize % 8;
-
-                for tx in 0..21 {
-                    let offset = wd_tilemap_base + tx + ty * 32;
-                    let tile = self.vram[offset];
-
-                    let (_, r) = self.vram.split_at(tiledata_base(self.lcdc, tile, iy));
-                    let (r, _) = r.split_at(2);
-                    buf.copy_from_slice(r);
-
-                    for k in 0..8 {
-                        let x = tx * 8 + self.window.0 as usize - 7;
-                        let kb = 7 - k;
-                        let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
-                        plot_bg((x + k) as _, c);
-                    }
-                }
-
+                self.render_window(&mut strip_bg, &mut buf);
                 self.wly += 1;
             }
         }
@@ -179,7 +127,11 @@ impl Ppu {
                     let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
 
                     if c != 0 {
-                        plot_ob((x + k) as _, c, o.3 & 0x80 != 0, p);
+                        let x = (x + k) as usize;
+
+                        if x < 160 && strip_ob[x].0 == 0 {
+                            strip_ob[x] = (c, p, o.3 & 0x80 != 0);
+                        };
                     }
                 }
             }
@@ -196,11 +148,86 @@ impl Ppu {
             );
         }
 
-        self.gen_stat(self.ly == self.lyc, 0x40)
+        self.check_stat(prev_req)
     }
 
-    fn gen_stat(&self, cond: bool, bit: u8) -> Option<u8> {
-        (cond && self.stat & bit != 0).then_some(1)
+    fn tiledata_base(&self, tile: u8, iy: usize) -> usize {
+        if self.lcdc & 0x10 == 0 {
+            (0x1000 + tile as i8 as isize * 16) as usize + iy * 2
+        } else {
+            tile as usize * 16 + iy * 2
+        }
+    }
+
+    fn render_bg(&self, y: u8, strip_bg: &mut [u8; 160], buf: &mut [u8; 2]) {
+        let ty = (y + self.scroll.1) as usize / 8;
+        let iy = (y + self.scroll.1) as usize % 8;
+
+        let tilemap_base = if self.lcdc & 8 == 0 { 0x1800 } else { 0x1c00 } + ty * 32;
+
+        'a: for sx in 0..21 {
+            let tx = (sx + self.scroll.0 / 8) as usize % 32;
+            let xo = (self.scroll.0 % 8) as u8;
+
+            let offset = tilemap_base + tx;
+            let tile = self.vram[offset];
+
+            let (_, r) = self.vram.split_at(self.tiledata_base(tile, iy));
+            let (r, _) = r.split_at(2);
+            buf.copy_from_slice(r);
+
+            for k in 0..8 {
+                let x = sx * 8;
+                let kb = 7 - k;
+                let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
+
+                let x = x as isize + k as isize - xo as isize;
+                if 0 <= x && x < 160 {
+                    strip_bg[x as usize] = c;
+                } else if 0 <= x {
+                    break 'a;
+                }
+            }
+        }
+    }
+
+    fn render_window(&self, strip_bg: &mut [u8; 160], buf: &mut [u8; 2]) {
+        let ty = self.wly as usize / 8;
+        let iy = self.wly as usize % 8;
+
+        let tilemap_base = if self.lcdc & 0x40 == 0 { 0x1800 } else { 0x1c00 } + ty * 32;
+
+        'a: for tx in 0..21 {
+            let offset = tilemap_base + tx;
+            let tile = self.vram[offset];
+
+            let (_, r) = self.vram.split_at(self.tiledata_base(tile, iy));
+            let (r, _) = r.split_at(2);
+            buf.copy_from_slice(r);
+
+            for k in 0..8 {
+                let x = tx * 8 + self.window.0 as usize - 7;
+                let kb = 7 - k;
+                let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
+
+                let x = x as isize + k as isize;
+                if 0 <= x && x < 160 {
+                    strip_bg[x as usize] = c;
+                } else if 0 <= x {
+                    break 'a;
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn stat_request(&mut self, cond: bool, bit: u8) {
+        self.stat_request &= !bit;
+        self.stat_request |= cond as u8 * bit;
+    }
+
+    fn check_stat(&self, prev: u8) -> Option<u8> {
+        (!prev & self.stat_request & self.stat & 0x78 != 0).then_some(1)
     }
 
     fn get_mode(&self) -> usize {

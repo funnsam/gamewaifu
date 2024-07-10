@@ -62,7 +62,12 @@ impl<'a> Gameboy<'a> {
         let tima = self.cpu.bus.tima;
 
         self.cpu.step();
-        self.cpu.bus.ppu.step().map(|i| self.cpu.interrupt(i));
+        self.cpu.bus.ppu.step().map(|i| if i != 2 {
+            self.cpu.interrupt(i);
+        } else {
+            self.cpu.interrupt(0);
+            self.cpu.interrupt(1);
+        });
         self.cpu.bus.apu.step(self.cpu.div & 0x2000 != 0);
 
         // oam dma

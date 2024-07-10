@@ -15,6 +15,8 @@ fn main() {
         .vsync()
         .build();
 
+    rl.set_exit_key(None);
+
     let args = args::Args::parse();
     let (gb_fb, keys) = crate::init(&args);
 
@@ -118,6 +120,10 @@ fn run_emu(mut gb: gb::Gameboy, save_file: String) {
         if !BURST.load(Ordering::Relaxed) {
             dur += Duration::from_secs_f64(BURST_CYCLES as f64 / gb::CLOCK_HZ as f64);
             dur = dur.saturating_sub(start.elapsed());
+
+            if Duration::from_secs_f64(BURST_CYCLES as f64 / gb::CLOCK_HZ as f64) < start.elapsed() {
+                println!("! {:?}", start.elapsed().saturating_sub(Duration::from_secs_f64(BURST_CYCLES as f64 / gb::CLOCK_HZ as f64)));
+            }
 
             if dur.as_millis() > 5 {
                 thread::sleep(dur);

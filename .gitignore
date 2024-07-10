@@ -9,3 +9,5 @@ logs
 /mooneye-tests
 *.mp3
 *.wav
+perf.data
+perf.data.old

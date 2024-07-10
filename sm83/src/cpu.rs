@@ -535,15 +535,16 @@ impl<B: bus::Bus> Sm83<B> {
 
         if i != 0 {
             self.mode = Mode::Normal;
+        } else {
+            return;
         }
 
         if !self.ime { return; }
 
-        for b in 0..8 {
+        for b in 0..4 {
             if (i >> b) & 1 != 0 {
                 self.int_if ^= 1 << b;
                 self.ime = false;
-                eprintln!("int {b} {} {}", self.get_state(), self.div);
                 self.call(0x40 + b * 8);
                 self.incr_cycles(2);
                 return;
