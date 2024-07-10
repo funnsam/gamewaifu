@@ -428,7 +428,7 @@ impl Envelope {
 
 impl Channel1 {
     fn step(&mut self) {
-        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() {
             self.active = true;
             self.envelope.pace_timer = self.envelope.pace;
             self.envelope.volume = self.envelope.init_vol;
@@ -497,7 +497,7 @@ impl Channel1 {
 
 impl Channel2 {
     fn step(&mut self) {
-        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() {
             self.active = true;
             self.envelope.pace_timer = self.envelope.pace;
             self.envelope.volume = self.envelope.init_vol;
@@ -533,7 +533,7 @@ impl Channel2 {
 
 impl Channel3 {
     fn step(&mut self) {
-        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled {
             self.active = true;
             if self.length_timer == 0 { self.length_timer = 256; }
         }
@@ -568,7 +568,7 @@ impl Channel3 {
 
 impl Channel4 {
     fn step(&mut self) {
-        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() && !self.active {
+        if core::mem::replace(&mut self.triggered, false) && self.dac_enabled() {
             self.active = true;
             self.envelope.pace_timer = self.envelope.pace;
             self.envelope.volume = self.envelope.init_vol;
