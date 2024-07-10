@@ -25,7 +25,7 @@ fn main() {
     let tmy = tmx * 2;
     let tmyh = tmy / 2;
 
-    loop {
+    for frame in 0.. {
         print!("\x1b[2K\x1b[H");
 
         for my in 0..144 / tmy {
@@ -35,15 +35,15 @@ fn main() {
 
                 let mut l = 0;
                 for sy in 0..tmyh {
-                    for sx in 0..tmx {
-                        l += gb_fb[(y + sy) * 160 + x + sx].load(Ordering::Relaxed) as usize & 3;
+                    for sx in 0..tmx { // NOTE: we do not lock for entire frame here bc console slow ass
+                        l += gb_fb.lock().unwrap()[(y + sy) * 160 + x + sx] as usize & 3;
                     }
                 }
 
                 let mut u = 0;
                 for sy in 0..tmyh {
                     for sx in 0..tmx {
-                        u += gb_fb[(y + sy + tmyh) * 160 + x + sx].load(Ordering::Relaxed) as usize & 3;
+                        u += gb_fb.lock().unwrap()[(y + sy + tmyh) * 160 + x + sx] as usize & 3;
                     }
                 }
 
@@ -72,6 +72,10 @@ fn main() {
 
             println!("\r");
         }
+
+        println!("\x1b[0m{frame}\r");
+        prev_pf_a = "";
+        prev_pf_b = "";
 
         let mut du = 0;
         let mut dd = 0;
@@ -103,6 +107,7 @@ fn main() {
 
                     std::process::exit(0);
                 },
+                Ok(Key::Char('\n')) => { BURST.fetch_xor(true, Ordering::Relaxed); },
                 _ => {},
             }
         }
@@ -163,14 +168,11 @@ fn run_emu(mut gb: gb::Gameboy) {
     }
 }
 
-fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
+fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
     let rom = std::fs::read(&args.rom).unwrap();
     let br = args.boot_rom.as_ref().map(|b| std::fs::read(b).unwrap().into());
 
-    let mut gb_fb = Vec::with_capacity(160 * 144);
-    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
-    let gb_fb: Arc<_> = gb_fb.into();
-
+    let gb_fb = Mutex::new([0; 160 * 144]).into();
     let keys = Arc::new(AtomicU8::new(0x00));
 
     let mapper = gb::mapper::Mapper::from_bin(&rom);
@@ -181,10 +183,9 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
 
         thread::spawn(move || {
             #[cfg(feature = "audio")]
-            let sink = {
-                let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
-                rodio::Sink::try_new(&st_handle).unwrap()
-            };
+            let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
+            #[cfg(feature = "audio")]
+            let sink = rodio::Sink::try_new(&st_handle).unwrap();
 
             #[cfg(feature = "wav")]
             let (mut wav, file_size_idx, data_size_idx) = {
