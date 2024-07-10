@@ -161,8 +161,6 @@ fn run_emu(mut gb: gb::Gameboy) {
             }
         }
     }
-
-    STOP.store(false, Ordering::Relaxed);
 }
 
 fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
@@ -188,6 +186,28 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
                 rodio::Sink::try_new(&st_handle).unwrap()
             };
 
+            #[cfg(feature = "wav")]
+            let (mut wav, file_size_idx, data_size_idx) = {
+                let mut wav = Vec::<u8>::new();
+                wav.extend(b"RIFF");
+                let file_size_idx = wav.len();
+                wav.extend(0_u32.to_le_bytes());
+                wav.extend(b"WAVE");
+                wav.extend(b"fmt ");
+                wav.extend(16_u32.to_le_bytes());
+                wav.extend(1_u16.to_le_bytes());
+                wav.extend(2_u16.to_le_bytes());
+                wav.extend((gb::apu::SAMPLE_RATE as u32).to_le_bytes());
+                wav.extend((gb::apu::SAMPLE_RATE as u32 * 16 * 2 / 8).to_le_bytes());
+                wav.extend(4_u16.to_le_bytes());
+                wav.extend(16_u16.to_le_bytes());
+                wav.extend(b"data");
+                let data_size_idx = wav.len();
+                wav.extend(0_u32.to_le_bytes());
+
+                (wav, file_size_idx, data_size_idx)
+            };
+
             let gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
                 #[cfg(feature = "audio")] {
                     if sink.len() > 3 {
@@ -196,9 +216,21 @@ fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
 
                     sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
                 }
+
+                #[cfg(feature = "wav")]
+                wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
             }), keys);
 
             run_emu(gb);
+
+            #[cfg(feature = "wav")] {
+                let wav_len = wav.len();
+                wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());
+                wav[data_size_idx..data_size_idx + 4].copy_from_slice(&((wav_len - data_size_idx - 4) as u32).to_le_bytes());
+                std::fs::write("audio.wav", wav).unwrap();
+            }
+
+            STOP.store(false, Ordering::Relaxed);
         });
     }
 

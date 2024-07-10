@@ -13,3 +13,4 @@ termion = "4.0.2"
 [features]
 default = ["audio"]
 audio = ["dep:rodio"]
+wav = []

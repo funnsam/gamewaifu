@@ -57,6 +57,7 @@ impl Ppu {
         let mode = self.get_mode();
         let prev_req = self.stat_request;
 
+        self.stat_request = 0;
         self.stat_request(mode == 0, 0x08);
         self.stat_request(mode == 1, 0x10);
         self.stat_request(mode == 2, 0x20);
@@ -222,7 +223,6 @@ impl Ppu {
 
     #[inline]
     fn stat_request(&mut self, cond: bool, bit: u8) {
-        self.stat_request &= !bit;
         self.stat_request |= cond as u8 * bit;
     }
 
