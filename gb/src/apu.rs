@@ -145,6 +145,11 @@ impl<'a> Apu<'a> {
             return self.write(|_| (0, 0));
         }
 
+        self.ch1.step();
+        self.ch2.step();
+        self.ch3.step();
+        self.ch4.step();
+
         if core::mem::replace(&mut self.last_div_edge, div_edge) && !div_edge {
             self.seq_timer = (self.seq_timer + 1) % 8;
             let (len, env, sweep) = [
@@ -175,11 +180,6 @@ impl<'a> Apu<'a> {
                 self.ch1.step_sweep();
             }
         }
-
-        self.ch1.step();
-        self.ch2.step();
-        self.ch3.step();
-        self.ch4.step();
 
         self.write(|s| {
             let c1 = s.ch1.get_amp();

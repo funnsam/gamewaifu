@@ -53,13 +53,12 @@ impl Ppu {
             return None;
         }
 
+        let mode = self.get_mode();
+        let prev_req = core::mem::take(&mut self.stat_request);
+
         let hsync = self.hsync;
         self.hsync = (self.hsync + 1) % 456;
 
-        let mode = self.get_mode();
-        let prev_req = self.stat_request;
-
-        self.stat_request = 0;
         self.stat_request(mode == 0, 0x08);
         self.stat_request(mode == 1, 0x10);
         self.stat_request(mode == 2, 0x20);
