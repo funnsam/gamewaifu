@@ -29,7 +29,7 @@ fn main() {
         {
             let mut d = rl.begin_drawing(&thread);
 
-            convert(&gb_fb, &mut fb);
+            convert(&gb_fb.lock().unwrap(), &mut fb);
             rl_fb.update_texture(&fb);
 
             d.clear_background(Color::from_hex("0b1920").unwrap());
@@ -71,7 +71,7 @@ fn main() {
             let mut frame = gif::Frame::default();
             frame.width = 160;
             frame.height = 144;
-            frame.buffer = std::borrow::Cow::Owned(gb_fb.iter().map(|v| v.load(Ordering::Relaxed)).collect());
+            frame.buffer = std::borrow::Cow::Owned((*gb_fb.lock().unwrap()).to_vec());
             encoder.write_frame(&frame).unwrap();
         } else if rl.is_key_pressed(KeyboardKey::KEY_Y) {
             SAVE.store(true, Ordering::Relaxed);
@@ -91,9 +91,9 @@ fn main() {
         0x0b0000ff,
     ];
 
-    fn convert(gb_fb: &[AtomicU8], fb: &mut [u8]) {
+    fn convert(gb_fb: &[u8], fb: &mut [u8]) {
         for (i, c) in gb_fb.iter().enumerate() {
-            let c = PALETTE[c.load(Ordering::Relaxed) as usize];
+            let c = PALETTE[*c as usize];
             let c = c.to_be_bytes();
             let (_, r) = fb.split_at_mut(i * 4);
             let (l, _) = r.split_at_mut(4);
@@ -142,14 +142,11 @@ fn run_emu(mut gb: gb::Gameboy, save_file: String) {
     }
 }
 
-fn init(args: &args::Args) -> (Arc<[AtomicU8]>, Arc<AtomicU8>) {
+fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
     let rom = std::fs::read(&args.rom).unwrap();
     let br = args.boot_rom.as_ref().map(|b| std::fs::read(b).unwrap().into());
 
-    let mut gb_fb = Vec::with_capacity(160 * 144);
-    for _ in 0..160 * 144 { gb_fb.push(AtomicU8::new(0)); }
-    let gb_fb: Arc<_> = gb_fb.into();
-
+    let gb_fb = Mutex::new([0; 160 * 144]).into();
     let keys = Arc::new(AtomicU8::new(0x00));
 
     let mapper = gb::mapper::Mapper::from_bin(&rom);

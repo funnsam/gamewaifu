@@ -21,7 +21,7 @@ impl<'a> Gameboy<'a> {
     pub fn new(
         mapper: mapper::Mapper,
         boot_rom: Option<Box<[u8]>>,
-        framebuffer: Arc<[AtomicU8]>,
+        framebuffer: Arc<Mutex<[u8; 160 * 144]>>,
         aud_callback: apu::Callback<'a>,
         keys: Arc<AtomicU8>,
     ) -> Self {

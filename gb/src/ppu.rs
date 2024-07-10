@@ -1,7 +1,8 @@
-use std::sync::{atomic::*, Arc};
+use std::sync::{Arc, Mutex};
 
 pub struct Ppu {
-    framebuffer: Arc<[AtomicU8]>,
+    front_buffer: Arc<Mutex<[u8; 160 * 144]>>,
+    back_buffer: [u8; 160 * 144],
 
     vram: [u8; 0x2000],
     pub(crate) oam: [u8; 0xa0],
@@ -22,9 +23,10 @@ pub struct Ppu {
 }
 
 impl Ppu {
-    pub fn new(framebuffer: Arc<[AtomicU8]>) -> Self {
+    pub fn new(front_buffer: Arc<Mutex<[u8; 160 * 144]>>) -> Self {
         Self {
-            framebuffer,
+            front_buffer,
+            back_buffer: [0; 160 * 144],
 
             vram: [0; 0x2000],
             oam: [0; 0xa0],
@@ -61,6 +63,7 @@ impl Ppu {
         self.stat_request(mode == 0, 0x08);
         self.stat_request(mode == 1, 0x10);
         self.stat_request(mode == 2, 0x20);
+        self.stat_request(self.ly == self.lyc || (self.ly == 153 && self.lyc == 0 && self.hsync >= 4), 0x40);
 
         if hsync != 455 {
             return self.check_stat(prev_req);
@@ -68,8 +71,6 @@ impl Ppu {
 
         let y = self.ly;
         self.ly = (self.ly + 1) % 154;
-
-        self.stat_request(self.ly == self.lyc || (self.ly == 153 && self.lyc == 0 && self.hsync >= 4), 0x40);
 
         if y > 144 {
             return self.check_stat(prev_req);
@@ -139,14 +140,16 @@ impl Ppu {
         }
 
         for (x, (b, (o, p, pr))) in strip_bg.into_iter().zip(strip_ob).enumerate() {
-            self.framebuffer[y as usize * 160 + x].store(
-                if o == 0 || (pr && b != 0) {
-                    (self.bgp >> (b * 2)) & 3
-                } else {
-                    (p >> (o * 2)) & 3
-                },
-                Ordering::Relaxed,
-            );
+            self.back_buffer[y as usize * 160 + x] = if o == 0 || (pr && b != 0) {
+                (self.bgp >> (b * 2)) & 3
+            } else {
+                (p >> (o * 2)) & 3
+            };
+        }
+
+        if y == 143 {
+            let mut fb = self.front_buffer.lock().unwrap();
+            fb.copy_from_slice(&self.back_buffer);
         }
 
         self.check_stat(prev_req)
@@ -276,9 +279,9 @@ impl Ppu {
                 if data & 0x80 == 0 {
                     self.hsync = 455;
                     self.ly = 0;
-                    self.framebuffer.iter().for_each(|i| { i.fetch_or(4, Ordering::Relaxed); });
+                    // self.framebuffer.iter().for_each(|i| { i.fetch_or(4, Ordering::Relaxed); });
                 } else {
-                    self.framebuffer.iter().for_each(|i| { i.fetch_and(!4, Ordering::Relaxed); });
+                    // self.framebuffer.iter().for_each(|i| { i.fetch_and(!4, Ordering::Relaxed); });
                 }
                 self.lcdc = data;
             },
