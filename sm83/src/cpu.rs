@@ -287,7 +287,7 @@ impl<B: bus::Bus> Sm83<B> {
             (0, 4, 7, _, _) => { // daa
                 let mut a = self.load_reg_r8(A);
                 let n = self.get_flag(FN);
-                if self.get_flag(FC) || (!n && (a & 0xff) > 0x99) { a -= 0x60 * (n as u8 * 2 - 1); setf!(c 1); }
+                if self.get_flag(FC) || (!n && a > 0x99) { a -= 0x60 * (n as u8 * 2 - 1); setf!(c 1); }
                 if self.get_flag(FH) || (!n && (a & 0x0f) > 0x09) { a -= 0x06 * (n as u8 * 2 - 1); }
                 self.store_reg_r8(A, a);
 
@@ -334,7 +334,7 @@ impl<B: bus::Bus> Sm83<B> {
                 let sp = self.sp;
                 self.sp += e as i8 as u16;
 
-                let (_, c) = (sp as u8).overflowing_add(e as u8);
+                let (_, c) = (sp as u8).overflowing_add(e);
                 setf!(z 0, n 0, c c, h hc_u8(sp as _, e, u8::add));
             },
             (3, 6, 0, _, _) => { // ldh a, i8
@@ -347,7 +347,7 @@ impl<B: bus::Bus> Sm83<B> {
                 self.store_reg_r16(HL, self.sp + e as i8 as u16);
                 self.incr_cycles(1);
 
-                let (_, c) = (self.sp as u8).overflowing_add(e as u8);
+                let (_, c) = (self.sp as u8).overflowing_add(e);
                 let sp = self.sp;
                 setf!(z 0, n 0, c c, h hc_u8(sp as _, e, u8::add));
             },

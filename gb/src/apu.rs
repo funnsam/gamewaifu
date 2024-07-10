@@ -206,7 +206,7 @@ impl<'a> Apu<'a> {
         self.output_timer += 1;
         if self.output_timer % (crate::CLOCK_HZ / SAMPLE_RATE) == 0 {
             let (l, r) = cb(self);
-            self.buffer[self.buffer_at + 0] = l;
+            self.buffer[self.buffer_at] = l;
             self.buffer[self.buffer_at + 1] = r;
             self.buffer_at += 2;
 
@@ -224,19 +224,18 @@ impl<'a> Apu<'a> {
                     | ((self.ch4.active as u8) << 3)
                     | ((self.ch3.active as u8) << 2)
                     | ((self.ch2.active as u8) << 1)
-                    | ((self.ch1.active as u8) << 0)
+                    | (self.ch1.active as u8)
                     | 0x70
             },
             0xff25 => { // NR51
-                0
-                    | ((self.ch4.hard_pan.0 as u8) << 7)
+                ((self.ch4.hard_pan.0 as u8) << 7)
                     | ((self.ch4.hard_pan.1 as u8) << 3)
                     | ((self.ch3.hard_pan.0 as u8) << 6)
                     | ((self.ch3.hard_pan.1 as u8) << 2)
                     | ((self.ch2.hard_pan.0 as u8) << 5)
                     | ((self.ch2.hard_pan.1 as u8) << 1)
                     | ((self.ch1.hard_pan.0 as u8) << 4)
-                    | ((self.ch1.hard_pan.1 as u8) << 0)
+                    | (self.ch1.hard_pan.1 as u8)
             },
             0xff24 => { // NR50
                 ((self.vin_enabled.0 as u8) << 7)
@@ -286,7 +285,7 @@ impl<'a> Apu<'a> {
                 if !self.enable {
                     self.ch1 = Channel1::default();
                     self.ch2 = Channel2::default();
-                    let wave = self.ch3.wave.clone();
+                    let wave = self.ch3.wave;
                     self.ch3 = Channel3::default();
                     self.ch3.wave = wave;
                     self.ch4 = Channel4::default();
@@ -307,7 +306,7 @@ impl<'a> Apu<'a> {
             },
             0xff24 => { // NR50
                 self.volume.0 = (data >> 4) & 7;
-                self.volume.1 = (data >> 0) & 7;
+                self.volume.1 = data & 7;
                 self.vin_enabled.0 = (data & 0x80) != 0;
                 self.vin_enabled.1 = (data & 0x08) != 0;
             },
@@ -319,7 +318,7 @@ impl<'a> Apu<'a> {
             },
             0xff11 => { // NR11
                 self.ch1.duty = data >> 6;
-                self.ch1.length_timer = 64 - data & 0x3f;
+                self.ch1.length_timer = 64 - (data & 0x3f);
                 if self.ch1.length_timer == 0 { self.ch1.length_timer = 64; }
             },
             0xff12 => self.ch1.active &= self.ch1.envelope.update_from_bits(data), // NR12
@@ -336,7 +335,7 @@ impl<'a> Apu<'a> {
 
             0xff16 => { // NR21
                 self.ch2.duty = data >> 6;
-                self.ch2.length_timer = 64 - data & 0x3f;
+                self.ch2.length_timer = 64 - (data & 0x3f);
                 if self.ch2.length_timer == 0 { self.ch2.length_timer = 64; }
             },
             0xff17 => self.ch2.active &= self.ch2.envelope.update_from_bits(data), // NR22
@@ -373,7 +372,7 @@ impl<'a> Apu<'a> {
             0xff30..=0xff3f => self.ch3.wave[(addr - 0xff30) as usize] = data,
 
             0xff20 => { // NR41
-                self.ch4.length_timer = 64 - data & 0x3f;
+                self.ch4.length_timer = 64 - (data & 0x3f);
                 if self.ch4.length_timer == 0 { self.ch4.length_timer = 64; }
             },
             0xff21 => self.ch4.active &= self.ch4.envelope.update_from_bits(data), // NR42
@@ -488,8 +487,8 @@ impl Channel1 {
         if !self.active || !self.dac_enabled() { return 0; }
 
         let amp = ((SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1) * self.envelope.volume;
-        let amp = amp as i16 * 0x222 - 0x1000;
-        amp
+        
+        amp as i16 * 0x222 - 0x1000
     }
 
     fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.env_dir }
@@ -524,8 +523,8 @@ impl Channel2 {
         if !self.active || !self.dac_enabled() { return 0; }
 
         let amp = ((SQ_WAVE_WAVEFORM[self.duty as usize] >> self.duty_pos) & 1) * self.envelope.volume;
-        let amp = amp as i16 * 0x222 - 0x1000;
-        amp
+        
+        amp as i16 * 0x222 - 0x1000
     }
 
     fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.env_dir }
@@ -557,12 +556,12 @@ impl Channel3 {
     fn get_amp(&self) -> i16 {
         if !self.active || !self.dac_enabled { return 0; }
 
-        let wa = self.wave[(self.wave_pos >> 1) as usize];
+        let wa = self.wave[self.wave_pos >> 1];
         let wa = if self.wave_pos & 1 == 0 { wa >> 4 } else { wa & 0xf };
 
         let amp = wa >> [4, 0, 1, 2][self.out_level as usize];
-        let amp = amp as i16 * 0x222 - 0x1000;
-        amp
+        
+        amp as i16 * 0x222 - 0x1000
     }
 }
 
@@ -602,8 +601,8 @@ impl Channel4 {
         if !self.active || !self.dac_enabled() { return 0; }
 
         let amp = (self.lfsr as u8 & 1) * self.envelope.volume;
-        let amp = amp as i16 * 0x222 - 0x1000;
-        amp
+        
+        amp as i16 * 0x222 - 0x1000
     }
 
     fn dac_enabled(&self) -> bool { self.envelope.init_vol != 0 || self.envelope.env_dir }

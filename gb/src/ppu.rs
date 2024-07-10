@@ -104,7 +104,7 @@ impl Ppu {
                 let oy = obj[0] - 16;
 
                 if (oy..oy + height).contains(&y) {
-                    objs[objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().try_into().unwrap();
+                    objs[objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().into();
                     objc += 1;
                     if objc >= 10 { break; }
                 }
@@ -170,7 +170,7 @@ impl Ppu {
 
         'a: for sx in 0..21 {
             let tx = (sx + self.scroll.0 / 8) as usize % 32;
-            let xo = (self.scroll.0 % 8) as u8;
+            let xo = self.scroll.0 % 8;
 
             let offset = tilemap_base + tx;
             let tile = self.vram[offset];
@@ -185,7 +185,7 @@ impl Ppu {
                 let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
 
                 let x = x as isize + k as isize - xo as isize;
-                if 0 <= x && x < 160 {
+                if (0..160).contains(&x) {
                     strip_bg[x as usize] = c;
                 } else if 0 <= x {
                     break 'a;
@@ -214,7 +214,7 @@ impl Ppu {
                 let c = (((buf[1] >> kb) & 1) << 1) | ((buf[0] >> kb) & 1);
 
                 let x = x as isize + k as isize;
-                if 0 <= x && x < 160 {
+                if (0..160).contains(&x) {
                     strip_bg[x as usize] = c;
                 } else if 0 <= x {
                     break 'a;

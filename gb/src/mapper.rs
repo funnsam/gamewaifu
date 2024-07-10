@@ -74,7 +74,7 @@ impl Mapper {
                 }
             },
             // TODO: more asserts
-            0x01 | 0x02 | 0x03 => { // mbc1
+            0x01..=0x03 => { // mbc1
                 Mapper::Mbc1 {
                     rom: bin.to_vec(),
                     ram: vec![0xff; ram_banks * 8192],
@@ -88,7 +88,7 @@ impl Mapper {
                     rom_ext: false, // TODO: fat ass rom
                 }
             },
-            0x11 | 0x12 | 0x13 => { // mbc3
+            0x11..=0x13 => { // mbc3
                 Mapper::Mbc3 {
                     rom: bin.to_vec(),
                     ram: vec![0xff; ram_banks * 8192],
@@ -100,7 +100,7 @@ impl Mapper {
                     ram_bk: 0,
                 }
             },
-            0x19 | 0x1a | 0x1b | 0x1c | 0x1d | 0x1e => { // mbc5
+            0x19..=0x1e => { // mbc5
                 Mapper::Mbc5 {
                     rom: bin.to_vec(),
                     ram: vec![0xff; ram_banks * 8192],
@@ -132,7 +132,7 @@ impl Mapper {
             Self::Mbc1 { ram, .. }
                 | Self::Mbc3 { ram, .. }
                 | Self::Mbc5 { ram, .. }
-            => Some(&ram),
+            => Some(ram),
         }
     }
 
@@ -178,10 +178,7 @@ impl Mapper {
 
     pub(crate) fn store(&mut self, a: u16, d: u8) {
         match self {
-            Self::None { rom: _, ram } => match a {
-                0xa000..=0xbfff => ram.get_mut(a as usize - 0xa000).map(|r| *r = d).unwrap_or(()),
-                _ => {},
-            },
+            Self::None { rom: _, ram } => if let 0xa000..=0xbfff = a { ram.get_mut(a as usize - 0xa000).map(|r| *r = d).unwrap_or(()) },
             Self::Mbc1 { ram, ram_en, rom_bk, ram_bk, mode, .. } => match a {
                 0x0000..=0x1fff => *ram_en = d == 0xa,
                 0x2000..=0x3fff => *rom_bk = d & 0x1f,

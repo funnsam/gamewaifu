@@ -55,14 +55,14 @@ fn main() {
                 let pa = PREFIXES_A[l][u];
                 let pb = PREFIXES_B[l][u];
 
-                if pa != prev_pf_a && pb != prev_pf_b && pa != "" && pb != "" {
+                if pa != prev_pf_a && pb != prev_pf_b && !pa.is_empty() && !pb.is_empty() {
                     print!("\x1b[{pa};{pb}m");
                     prev_pf_a = pa;
                     prev_pf_b = pb;
-                } else if pa != prev_pf_a && pa != "" {
+                } else if pa != prev_pf_a && !pa.is_empty() {
                     print!("\x1b[{pa}m");
                     prev_pf_a = pa;
-                } else if pb != prev_pf_b && pb != "" {
+                } else if pb != prev_pf_b && !pb.is_empty() {
                     print!("\x1b[{pb}m");
                     prev_pf_b = pb;
                 }
@@ -86,7 +86,7 @@ fn main() {
         let mut sl = 0;
         let mut st = 0;
 
-        while let Some(k) = in_keys.next() {
+        for k in in_keys.by_ref() {
             use termion::event::Key;
 
             match k {
@@ -100,7 +100,7 @@ fn main() {
                 Ok(Key::Char('b')) => st = 1,
                 Ok(Key::Esc) => {
                     STOP.store(true, Ordering::Relaxed);
-                    while STOP.load(Ordering::Relaxed) {}
+                    while STOP.load(Ordering::Relaxed) { std::hint::spin_loop() }
 
                     println!("\x1b[0m\x1b[?25h\x1b[?1049l");
                     raw.suspend_raw_mode().unwrap();
