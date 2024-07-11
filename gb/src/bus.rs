@@ -115,12 +115,7 @@ impl sm83::bus::Bus for Bus<'_> {
     fn external_step(&mut self, div: usize, int_mgr: &mut sm83::cpu::InterruptManager) {
         let tima = self.tima;
 
-        self.ppu.step().map(|i| if i != 2 {
-            int_mgr.interrupt(i);
-        } else {
-            int_mgr.interrupt(0);
-            int_mgr.interrupt(1);
-        });
+        self.ppu.step(int_mgr);
         self.apu.step(div & 0x1000 != 0);
 
         // oam dma

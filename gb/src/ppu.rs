@@ -20,6 +20,8 @@ pub struct Ppu {
 
     hsync: usize,
     stat_request: u8,
+
+    mode_3_penalty: usize,
 }
 
 impl Ppu {
@@ -44,14 +46,14 @@ impl Ppu {
 
             hsync: 0,
             stat_request: 0,
+
+            mode_3_penalty: 0,
         }
     }
 
     // returns interrupt
-    pub fn step(&mut self) -> Option<u8> {
-        if self.is_disabled() {
-            return None;
-        }
+    pub fn step(&mut self, int_mgr: &mut sm83::cpu::InterruptManager) {
+        if self.is_disabled() { return; }
 
         let mode = self.get_mode();
         let prev_req = core::mem::take(&mut self.stat_request) != 0;
@@ -61,6 +63,7 @@ impl Ppu {
 
         let y = self.ly;
         if hsync == 455 {
+            self.mode_3_penalty = 0;
             self.ly = (self.ly + 1) % 154;
         }
 
@@ -69,22 +72,27 @@ impl Ppu {
         self.stat_request(mode == 2, 0x20);
         self.stat_request(self.ly == self.lyc, 0x40);
 
-        if hsync != 455 || y > 144 {
-            return self.check_stat(prev_req);
-        } else if y == 144 {
+        if hsync == 455 && y == 144 {
             self.wly = 0;
-            return Some(self.check_stat(prev_req).unwrap_or(0) << 1);
+            self.check_stat(prev_req, int_mgr);
+            int_mgr.interrupt(0);
+            return;
+        } else if hsync != 80 || y >= 144 {
+            self.check_stat(prev_req, int_mgr);
+            return;
         }
 
         let mut strip_bg = [0; 160];
         let mut strip_ob = [(0, 0, false); 160];
         let mut buf = [0; 2];
 
+        self.mode_3_penalty = self.scroll.0 as usize % 8;
+
         if self.lcdc & 1 != 0 {
             self.render_bg(y, &mut strip_bg, &mut buf);
 
             if self.lcdc & 0x20 != 0 && self.window.0 <= 166 && self.window.1 <= y {
-                self.render_window(&mut strip_bg, &mut buf);
+                self.mode_3_penalty += self.render_window(&mut strip_bg, &mut buf) as usize * 6;
                 self.wly += 1;
             }
         }
@@ -132,6 +140,8 @@ impl Ppu {
                         };
                     }
                 }
+
+                self.mode_3_penalty += 6; // TODO: more accurate penalty algo
             }
         }
 
@@ -148,7 +158,7 @@ impl Ppu {
             fb.copy_from_slice(&self.back_buffer);
         }
 
-        self.check_stat(prev_req)
+        self.check_stat(prev_req, int_mgr)
     }
 
     fn tiledata_base(&self, tile: u8, iy: usize) -> usize {
@@ -190,11 +200,12 @@ impl Ppu {
         }
     }
 
-    fn render_window(&self, strip_bg: &mut [u8; 160], buf: &mut [u8; 2]) {
+    fn render_window(&self, strip_bg: &mut [u8; 160], buf: &mut [u8; 2]) -> bool {
         let ty = self.wly as usize / 8;
         let iy = self.wly as usize % 8;
 
         let tilemap_base = if self.lcdc & 0x40 == 0 { 0x1800 } else { 0x1c00 } + ty * 32;
+        let mut any = false;
 
         'a: for tx in 0..21 {
             let offset = tilemap_base + tx;
@@ -211,11 +222,14 @@ impl Ppu {
                 let x = x as isize + k as isize;
                 if (0..160).contains(&x) {
                     strip_bg[x as usize] = c;
+                    any = true;
                 } else if 0 <= x {
                     break 'a;
                 }
             }
         }
+
+        any
     }
 
     #[inline]
@@ -224,15 +238,15 @@ impl Ppu {
         self.stat_request &= self.stat & 0x78;
     }
 
-    fn check_stat(&self, prev: bool) -> Option<u8> {
-        (!prev && self.stat_request != 0).then_some(1)
+    fn check_stat(&self, prev: bool, int_mgr: &mut sm83::cpu::InterruptManager) {
+        if !prev && self.stat_request != 0 { int_mgr.interrupt(1); }
     }
 
     fn get_mode(&self) -> usize {
         match (self.hsync, self.ly) {
             (0..80, ..144) => 2,
-            (80..252, ..144) => 3,
-            (252.., ..144) => 0,
+            (80.., ..144) if (..172 + self.mode_3_penalty).contains(&(self.hsync - 80)) => 3,
+            (_, ..144) => 0,
             _ => 1,
         }
     }
@@ -249,8 +263,9 @@ impl Ppu {
 
     pub(crate) fn load(&self, addr: u16) -> u8 {
         match (addr, self.get_mode()) {
-            (0x8000..=0x9fff, 0..=2) => self.vram[addr as usize - 0x8000],
-            (0xfe00..=0xfe9f, 0..=1) => self.oam[addr as usize - 0xfe00],
+            // TODO: get good timings to not glich games
+            (0x8000..=0x9fff, _) => self.vram[addr as usize - 0x8000],
+            (0xfe00..=0xfe9f, _) => self.oam[addr as usize - 0xfe00],
             (0xff40, _) => self.lcdc,
             (0xff41, _) => self.get_stat(),
             (0xff42, _) => self.scroll.1,
