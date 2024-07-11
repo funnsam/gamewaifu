@@ -5,7 +5,7 @@ pub struct Ppu {
     back_buffer: [u8; 160 * 144],
 
     vram: [u8; 0x2000],
-    oam: [u8; 0xa0],
+    pub(crate) oam: [u8; 0xa0],
 
     lyc: u8,
     bgp: u8,
@@ -28,6 +28,8 @@ pub struct Ppu {
     m3_obj_fifo: VecDeque<FifoPixel>,
     m3_fetcher_state: FetcherState,
     m3_fetcher_counter: usize,
+    wlx: u8,
+    wly: u8,
 
     stat_lines: u8,
 }
@@ -67,6 +69,8 @@ impl Ppu {
             m3_obj_fifo: VecDeque::with_capacity(8),
             m3_fetcher_state: FetcherState::GetTile,
             m3_fetcher_counter: 0,
+            wlx: 0,
+            wly: 0,
 
             stat_lines: 0,
         }
@@ -76,6 +80,11 @@ impl Ppu {
         if self.is_disabled() { return; }
 
         let prev_stat = core::mem::take(&mut self.stat_lines) != 0;
+
+        self.request_stat(matches!(self.mode, Mode::HBlank), 0x08);
+        self.request_stat(matches!(self.mode, Mode::VBlank), 0x10);
+        self.request_stat(matches!(self.mode, Mode::OamScan), 0x20);
+        self.request_stat(self.ly == self.lyc, 0x40);
 
         match self.mode {
             Mode::OamScan => {
@@ -100,15 +109,28 @@ impl Ppu {
 
                 if self.scanline_dot >= 80 {
                     self.mode = Mode::DrawPixel;
-                    self.m3_counter = 172;
+                    self.m3_lx = 0;
                 }
             },
             Mode::DrawPixel => {
-                self.m3_counter -= 1;
-                if self.m3_counter == 0 { self.mode = Mode::HBlank; }
+                self.m3_fetch_bg();
+
+                if !self.m3_bg_fifo.is_empty() {
+                    self.back_buffer[self.ly as usize * 160 + self.m3_lx as usize] = self.m3_bg_fifo.pop_front().unwrap().color;
+
+                    self.m3_lx += 1;
+                    if self.m3_lx >= 160 { self.mode = Mode::HBlank; }
+                }
             },
             Mode::HBlank => {},
-            Mode::VBlank => {},
+            Mode::VBlank => {
+                if self.scanline_dot == 0 && self.ly == 144 {
+                    let mut fb = self.front_buffer.lock().unwrap();
+                    fb.copy_from_slice(&self.back_buffer);
+
+                    int_mgr.interrupt(0);
+                }
+            },
         }
 
         self.scanline_dot = (self.scanline_dot + 1) % 456;
@@ -121,6 +143,73 @@ impl Ppu {
     }
 
     fn m3_fetch_bg(&mut self) {
+        if self.m3_fetcher_counter != 0 {
+            self.m3_fetcher_counter -= 1;
+            return;
+        }
+
+        match &mut self.m3_fetcher_state {
+            FetcherState::GetTile => {
+                self.m3_fetcher_counter = 1;
+
+                let is_window = false;//self.m3_lx >= self.window.0;
+                let tilemap = if (self.lcdc & 8 != 0 && !is_window) || (self.lcdc & 0x40 != 0 && is_window) { 0x1c00 } else { 0x1800 };
+                let (x, y, i) = if !is_window {
+                    ((self.scroll.0 + self.m3_lx) / 8, (self.scroll.1 + self.ly) / 8, (self.scroll.1 + self.ly) % 8)
+                } else {
+                    (self.wlx / 8, self.wly / 8, self.wly % 8)
+                };
+
+                let tile = self.vram[tilemap + x as usize + y as usize * 32];
+                self.m3_fetcher_state = FetcherState::GetTileDataLo(tile, i);
+            },
+            FetcherState::GetTileDataLo(tile, y) => {
+                self.m3_fetcher_counter = 1;
+
+                let tile = *tile;
+                let y = *y;
+                let tiledata = self.get_tiledata_addr(tile) + y as usize * 2;
+                let lo = self.vram[tiledata];
+                self.m3_fetcher_state = FetcherState::GetTileDataHi(tile, y, lo);
+            },
+            FetcherState::GetTileDataHi(tile, y, lo) => {
+                self.m3_fetcher_counter = 1;
+
+                let tile = *tile;
+                let y = *y;
+                let lo = *lo;
+                let tiledata = self.get_tiledata_addr(tile) + y as usize * 2 + 1;
+                let hi = self.vram[tiledata];
+                self.m3_fetcher_state = FetcherState::Push(lo, hi, 8);
+            },
+            FetcherState::Push(lo, hi, count) => {
+                if self.m3_bg_fifo.is_empty() {
+                    let px = FifoPixel {
+                        color: ((*hi & 0x80) >> 6) | (*lo >> 7),
+                        bg_priority: false,
+                    };
+                    self.m3_bg_fifo.push_back(px);
+
+                    *lo <<= 1;
+                    *hi <<= 1;
+
+                    *count -= 1;
+                    if *count == 0 { self.m3_fetcher_state = FetcherState::Sleep; }
+                }
+            },
+            FetcherState::Sleep => {
+                self.m3_fetcher_counter = 1;
+                self.m3_fetcher_state = FetcherState::GetTile;
+            },
+        }
+    }
+
+    fn get_tiledata_addr(&self, tile: u8) -> usize {
+        if self.lcdc & 0x10 == 0 {
+            (0x1000 + tile as i8 as isize * 16) as usize
+        } else {
+            tile as usize * 16
+        }
     }
 
     fn request_stat(&mut self, cond: bool, bit: u8) {
@@ -186,8 +275,8 @@ enum Mode {
 #[derive(Debug, Clone, Copy)]
 enum FetcherState {
     GetTile,
-    GetTileDataHi,
-    GetTileDataLo,
+    GetTileDataLo(u8, u8),
+    GetTileDataHi(u8, u8, u8),
+    Push(u8, u8, usize),
     Sleep,
-    Push,
 }
