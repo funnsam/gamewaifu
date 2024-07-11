@@ -101,9 +101,9 @@ impl Ppu {
 
             for o in 0..40 {
                 let obj = &self.oam[o * 4..o * 4 + 4];
-                let oy = obj[0] - 16;
+                let oy = obj[0] as isize - 16;
 
-                if (oy..oy + height).contains(&y) {
+                if (oy..oy + height as isize).contains(&(y as isize)) {
                     objs[objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().into();
                     objc += 1;
                     if objc >= 10 { break; }
@@ -120,8 +120,7 @@ impl Ppu {
                 let p = self.obp[(o.3 >> 4) as usize & 1];
 
                 let (_, r) = self.vram.split_at((o.2 & t_mask) as usize * 16 + iy as usize * 2);
-                let (r, _) = r.split_at(2);
-                buf.copy_from_slice(r);
+                buf.copy_from_slice(&r[..2]);
 
                 for k in 0..8 {
                     let kb = if o.3 & 0x20 != 0 { k } else { 7 - k };
@@ -176,8 +175,7 @@ impl Ppu {
             let tile = self.vram[offset];
 
             let (_, r) = self.vram.split_at(self.tiledata_base(tile, iy));
-            let (r, _) = r.split_at(2);
-            buf.copy_from_slice(r);
+            buf.copy_from_slice(&r[..2]);
 
             for k in 0..8 {
                 let x = sx * 8;
@@ -205,8 +203,7 @@ impl Ppu {
             let tile = self.vram[offset];
 
             let (_, r) = self.vram.split_at(self.tiledata_base(tile, iy));
-            let (r, _) = r.split_at(2);
-            buf.copy_from_slice(r);
+            buf.copy_from_slice(&r[..2]);
 
             for k in 0..8 {
                 let x = tx * 8 + self.window.0 as usize - 7;
