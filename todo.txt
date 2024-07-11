@@ -1,3 +1,3 @@
-- oam bug
+- fix whatever is wrong with pocket.gb
 - accurate stop and halt
 - replace scanline ppu with t-cycle ppu (https://github.com/mattcurrie/mealybug-tearoom-tests)

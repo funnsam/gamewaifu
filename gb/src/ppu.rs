@@ -54,24 +54,22 @@ impl Ppu {
         }
 
         let mode = self.get_mode();
-        let prev_req = core::mem::take(&mut self.stat_request);
+        let prev_req = core::mem::take(&mut self.stat_request) != 0;
 
         let hsync = self.hsync;
         self.hsync = (self.hsync + 1) % 456;
 
+        let y = self.ly;
+        if hsync == 455 {
+            self.ly = (self.ly + 1) % 154;
+        }
+
         self.stat_request(mode == 0, 0x08);
         self.stat_request(mode == 1, 0x10);
         self.stat_request(mode == 2, 0x20);
-        self.stat_request(self.ly == self.lyc || (self.ly == 153 && self.lyc == 0 && self.hsync >= 4), 0x40);
+        self.stat_request(self.ly == self.lyc, 0x40);
 
-        if hsync != 455 {
-            return self.check_stat(prev_req);
-        }
-
-        let y = self.ly;
-        self.ly = (self.ly + 1) % 154;
-
-        if y > 144 {
+        if hsync != 455 || y > 144 {
             return self.check_stat(prev_req);
         } else if y == 144 {
             self.wly = 0;
@@ -223,10 +221,11 @@ impl Ppu {
     #[inline]
     fn stat_request(&mut self, cond: bool, bit: u8) {
         self.stat_request |= cond as u8 * bit;
+        self.stat_request &= self.stat & 0x78;
     }
 
-    fn check_stat(&self, prev: u8) -> Option<u8> {
-        (!prev & self.stat_request & self.stat & 0x78 != 0).then_some(1)
+    fn check_stat(&self, prev: bool) -> Option<u8> {
+        (!prev && self.stat_request != 0).then_some(1)
     }
 
     fn get_mode(&self) -> usize {
@@ -273,11 +272,8 @@ impl Ppu {
             (0xfe00..=0xfe9f, _) => self.oam[addr as usize - 0xfe00] = data,
             (0xff40, _) => {
                 if data & 0x80 == 0 {
-                    self.hsync = 455;
+                    self.hsync = 0;
                     self.ly = 0;
-                    // self.framebuffer.iter().for_each(|i| { i.fetch_or(4, Ordering::Relaxed); });
-                } else {
-                    // self.framebuffer.iter().for_each(|i| { i.fetch_and(!4, Ordering::Relaxed); });
                 }
                 self.lcdc = data;
             },
