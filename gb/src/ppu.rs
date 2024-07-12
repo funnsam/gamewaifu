@@ -23,7 +23,7 @@ pub struct Ppu {
     m2_objc: usize,
 
     m3_lx: u8,
-    m3_counter: usize,
+    m3_discard_counter: u8,
     m3_bg_fifo: VecDeque<FifoPixel>,
     m3_obj_fifo: VecDeque<FifoPixel>,
     m3_fetcher_state: FetcherState,
@@ -65,7 +65,7 @@ impl Ppu {
             m2_objc: 0,
 
             m3_lx: 0,
-            m3_counter: 0,
+            m3_discard_counter: 0,
             m3_bg_fifo: VecDeque::with_capacity(8),
             m3_obj_fifo: VecDeque::with_capacity(8),
             m3_fetcher_state: FetcherState::GetTile,
@@ -91,8 +91,6 @@ impl Ppu {
         match self.mode {
             Mode::OamScan => {
                 if self.scanline_dot == 0 {
-                    if self.m3_can_window { self.wly += 1; }
-
                     self.m2_objc = 0;
 
                     let long = self.lcdc & 4 != 0;
@@ -124,22 +122,30 @@ impl Ppu {
                     self.m3_lx = 0;
                     self.wlx = 0;
                     self.m3_can_window = self.lcdc & 0x20 != 0 && self.window.0 <= 166 && self.window.1 <= self.ly;
+                    self.m3_discard_counter = 2;//self.scroll.0 % 8;
                 }
 
                 self.m3_fetch_bg();
 
                 if !self.m3_bg_fifo.is_empty() {
                     let bg = self.m3_bg_fifo.pop_front().unwrap();
-                    // let obj = self.m3_obj_fifo.pop_front().unwrap();
 
-                    self.back_buffer[self.ly as usize * 160 + self.m3_lx as usize] = if self.lcdc & 1 != 0 {
-                        (self.bgp >> (bg.color * 2)) & 3
+                    if self.m3_discard_counter == 0 {
+                        self.back_buffer[self.ly as usize * 160 + self.m3_lx as usize] = if self.lcdc & 1 != 0 {
+                            (self.bgp >> (bg.color * 2)) & 3
+                        } else {
+                            0
+                        };
+
+                        self.m3_lx += 1;
+                        if self.m3_lx >= 160 {
+                            self.mode = Mode::HBlank;
+
+                            if self.m3_can_window { self.wly += 1; }
+                        }
                     } else {
-                        0
-                    };
-
-                    self.m3_lx += 1;
-                    if self.m3_lx >= 160 { self.mode = Mode::HBlank; }
+                        self.m3_discard_counter -= 1;
+                    }
                 }
             },
             Mode::HBlank => {
@@ -151,7 +157,6 @@ impl Ppu {
 
                     int_mgr.interrupt(0);
                     self.wly = 0;
-                    self.m3_can_window = false;
                 }
             },
         }

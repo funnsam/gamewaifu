@@ -545,6 +545,7 @@ impl<B: bus::Bus> Sm83<B> {
             if (i >> b) & 1 != 0 {
                 self.ints.pending ^= 1 << b;
                 self.ime = false;
+                if b==0{println!("{}", self.div);}
                 self.incr_cycles(2);
                 self.call(0x40 + b * 8);
                 return;
