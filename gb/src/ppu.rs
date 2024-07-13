@@ -28,7 +28,9 @@ pub struct Ppu {
     m3_obj_fifo: VecDeque<FifoPixel>,
     m3_fetcher_state: FetcherState,
     m3_fetcher_counter: usize,
+    m3_fetcher_x: u8,
     m3_can_window: bool,
+    m3_in_window: bool,
     wlx: u8,
     wly: u8,
 
@@ -70,7 +72,9 @@ impl Ppu {
             m3_obj_fifo: VecDeque::with_capacity(8),
             m3_fetcher_state: FetcherState::GetTile,
             m3_fetcher_counter: 0,
+            m3_fetcher_x: 0,
             m3_can_window: false,
+            m3_in_window: false,
             wlx: 0,
             wly: 0,
 
@@ -121,8 +125,10 @@ impl Ppu {
                     self.m3_obj_fifo.clear();
                     self.m3_lx = 0;
                     self.wlx = 0;
+                    self.m3_fetcher_x = 0;
                     self.m3_can_window = self.lcdc & 0x20 != 0 && self.window.0 <= 166 && self.window.1 <= self.ly;
-                    self.m3_discard_counter = 2;//self.scroll.0 % 8;
+                    self.m3_in_window = false;
+                    self.m3_discard_counter = self.scroll.0 % 8 + 8;
                 }
 
                 self.m3_fetch_bg();
@@ -176,15 +182,22 @@ impl Ppu {
             return;
         }
 
+        if self.m3_can_window && self.m3_lx + 7 == self.window.0 {
+            self.m3_bg_fifo.clear();
+            self.m3_fetcher_state = FetcherState::GetTile;
+            self.m3_in_window = true;
+        }
+
         match &mut self.m3_fetcher_state {
             FetcherState::GetTile => {
                 self.m3_fetcher_counter = 1;
 
-                let is_window = self.m3_can_window && self.m3_lx + 7 >= self.window.0;
-                let tilemap = if (self.lcdc & 8 != 0 && !is_window) || (self.lcdc & 0x40 != 0 && is_window) { 0x1c00 } else { 0x1800 };
-                let (x, y, i) = if !is_window {
+                let tilemap = if (self.lcdc & 8 != 0 && !self.m3_in_window) || (self.lcdc & 0x40 != 0 && self.m3_in_window) { 0x1c00 } else { 0x1800 };
+
+                let (x, y, i) = if !self.m3_in_window {
                     let y = self.scroll.1 + self.ly;
-                    (self.scroll.0 / 8 + self.m3_lx / 8, y / 8, y % 8)
+                    self.m3_fetcher_x += 1;
+                    (self.scroll.0 / 8 + self.m3_fetcher_x - 1, y / 8, y % 8)
                 } else {
                     self.wlx += 1;
                     (self.wlx - 1, self.wly / 8, self.wly % 8)
@@ -210,21 +223,22 @@ impl Ppu {
                 let lo = *lo;
                 let tiledata = self.get_tiledata_addr(tile) + y as usize * 2 + 1;
                 let hi = self.vram[tiledata];
-                self.m3_fetcher_state = FetcherState::Push(lo, hi, 8);
+                self.m3_fetcher_state = FetcherState::Push(lo, hi);
             },
-            FetcherState::Push(lo, hi, count) => {
+            FetcherState::Push(lo, hi) => {
                 if self.m3_bg_fifo.is_empty() {
-                    let px = FifoPixel {
-                        color: ((*hi & 0x80) >> 6) | (*lo >> 7),
-                        bg_priority: false,
-                    };
-                    self.m3_bg_fifo.push_back(px);
+                    for _ in 0..8 {
+                        let px = FifoPixel {
+                            color: ((*hi & 0x80) >> 6) | (*lo >> 7),
+                            bg_priority: false,
+                        };
+                        self.m3_bg_fifo.push_back(px);
 
-                    *lo <<= 1;
-                    *hi <<= 1;
+                        *lo <<= 1;
+                        *hi <<= 1;
+                    }
 
-                    *count -= 1;
-                    if *count == 0 { self.m3_fetcher_state = FetcherState::GetTile; }
+                    self.m3_fetcher_state = FetcherState::GetTile;
                 }
             },
         }
@@ -304,5 +318,5 @@ enum FetcherState {
     GetTileDataLo(u8, u8),
     GetTileDataHi(u8, u8, u8),
     // NOTE: GetTileDataHi contains the sleep
-    Push(u8, u8, usize),
+    Push(u8, u8),
 }
