@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 
 pub struct Ppu {
     front_buffer: Arc<Mutex<[u8; 160 * 144]>>,
@@ -27,6 +27,7 @@ pub struct Ppu {
     stat_lines: u8,
 }
 
+#[derive(Clone, Copy, Default)]
 struct FifoPixel {
     color: u8,
     bg_priority: bool,
@@ -59,8 +60,8 @@ impl Ppu {
             fetcher: PixelFetcher {
                 lx: 0,
                 discard_counter: 0,
-                bg_fifo: VecDeque::with_capacity(8),
-                obj_fifo: VecDeque::with_capacity(8),
+                bg_fifo: FifoQueue::new(),
+                obj_fifo: FifoQueue::new(),
                 state: FetcherState::GetTile,
                 state_counter: 0,
                 x: 0,
@@ -126,7 +127,7 @@ impl Ppu {
                 );
 
                 if !self.fetcher.bg_fifo.is_empty() {
-                    let bg = self.fetcher.bg_fifo.pop_front().unwrap();
+                    let bg = self.fetcher.bg_fifo.pop().unwrap();
 
                    if self.fetcher.discard_counter == 0 {
                         self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = if self.lcdc & 1 != 0 {
@@ -239,8 +240,8 @@ enum Mode {
 struct PixelFetcher {
     lx: u8,
     discard_counter: u8,
-    bg_fifo: VecDeque<FifoPixel>,
-    obj_fifo: VecDeque<FifoPixel>,
+    bg_fifo: FifoQueue<FifoPixel, 8>,
+    obj_fifo: FifoQueue<FifoPixel, 8>,
     state: FetcherState,
     state_counter: usize,
     x: u8,
@@ -336,7 +337,7 @@ impl PixelFetcher {
                             color: ((*hi & 0x80) >> 6) | (*lo >> 7),
                             bg_priority: false,
                         };
-                        self.bg_fifo.push_back(px);
+                        self.bg_fifo.push(px);
 
                         *lo <<= 1;
                         *hi <<= 1;
@@ -347,4 +348,83 @@ impl PixelFetcher {
             },
         }
     }
+}
+
+pub struct FifoQueue<T, const CAP: usize> {
+    queue: [T; CAP],
+    push_head: usize,
+    pop_head: usize,
+    length: usize,
+}
+
+impl<T, const CAP: usize> FifoQueue<T, CAP> {
+    pub fn push(&mut self, item: T) {
+        if self.len() >= CAP {
+            panic!("too much elements");
+        }
+
+        self.queue[self.push_head] = item;
+        self.push_head = (self.push_head + 1) % CAP;
+        self.length += 1;
+    }
+
+    pub fn len(&self) -> usize { self.length }
+    pub fn is_empty(&self) -> bool { self.length == 0 }
+
+    pub fn clear(&mut self) {
+        self.push_head = self.pop_head;
+        self.length = 0;
+    }
+}
+
+impl<T: Copy + Default, const CAP: usize> FifoQueue<T, CAP> {
+    pub fn new() -> Self {
+        Self {
+            queue: [T::default(); CAP],
+            push_head: 0,
+            pop_head: 0,
+            length: 0,
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        (!self.is_empty()).then(|| {
+            let v = core::mem::take(&mut self.queue[self.pop_head]);
+            self.pop_head = (self.pop_head + 1) % CAP;
+            self.length -= 1;
+            v
+        })
+    }
+}
+
+#[test]
+fn test_fifo_queue() {
+    let mut q: FifoQueue<u8, 4> = FifoQueue::new();
+    assert_eq!(q.len(), 0);
+    q.push(1);
+    assert_eq!(q.len(), 1);
+    q.push(2);
+    assert_eq!(q.len(), 2);
+    q.push(3);
+    assert_eq!(q.len(), 3);
+    q.push(4);
+    assert_eq!(q.len(), 4);
+
+    assert_eq!(q.pop(), Some(1));
+    assert_eq!(q.len(), 3);
+    assert_eq!(q.pop(), Some(2));
+    assert_eq!(q.len(), 2);
+    assert_eq!(q.pop(), Some(3));
+    assert_eq!(q.len(), 1);
+    assert_eq!(q.pop(), Some(4));
+    assert_eq!(q.len(), 0);
+    assert!(q.is_empty());
+    assert_eq!(q.pop(), None);
+
+    q.push(1);
+    q.push(1);
+    q.push(1);
+    assert_eq!(q.len(), 3);
+    q.clear();
+    assert!(q.is_empty());
 }
