@@ -185,7 +185,7 @@ fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
                 sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
 
                 // wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
-            }), keys);
+            }), keys, gb::Model::CgbA);
 
             if let Ok(sav) = std::fs::read(&save_file) {
                 gb.set_sram(&sav);

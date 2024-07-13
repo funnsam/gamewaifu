@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use crate::Model;
+
 pub struct Ppu {
     front_buffer: Arc<Mutex<[u8; 160 * 144]>>,
     back_buffer: [u8; 160 * 144],
@@ -7,25 +9,35 @@ pub struct Ppu {
     vram: [u8; 0x2000],
     pub(crate) oam: [u8; 0xa0],
 
+    vram_bank: u8,
+
     ly: u8,
     lyc: u8,
-    bgp: u8,
     scroll: (u8, u8),
     window: (u8, u8),
-    lcdc: u8,
+
+    bgp: u8,
     obp: [u8; 2],
 
-    stat: u8,
-    wly: u8,
+    cgb_bg_palette: [u16; 32],
+    cgb_obj_palette: [u16; 32],
+    bcps: u8,
+    ocps: u8,
 
+    lcdc: u8,
+    stat: u8,
+
+    wly: u8,
     hsync: usize,
     stat_request: u8,
 
     mode_3_penalty: usize,
+
+    model: Model,
 }
 
 impl Ppu {
-    pub fn new(front_buffer: Arc<Mutex<[u8; 160 * 144]>>) -> Self {
+    pub fn new(front_buffer: Arc<Mutex<[u8; 160 * 144]>>, model: Model) -> Self {
         Self {
             front_buffer,
             back_buffer: [0; 160 * 144],
@@ -33,21 +45,31 @@ impl Ppu {
             vram: [0; 0x2000],
             oam: [0; 0xa0],
 
+            vram_bank: 0,
+
             ly: 153,
             lyc: 0,
-            bgp: 0x1b,
             scroll: (0, 0),
             window: (0, 0),
-            lcdc: 0,
+
+            bgp: 0x1b,
             obp: [0; 2],
 
-            stat: 0,
-            wly: 0,
+            cgb_bg_palette: [0; 32],
+            cgb_obj_palette: [0; 32],
+            bcps: 0,
+            ocps: 0,
 
+            lcdc: 0,
+            stat: 0,
+
+            wly: 0,
             hsync: 0,
             stat_request: 0,
 
             mode_3_penalty: 0,
+
+            model,
         }
     }
 
@@ -261,7 +283,11 @@ impl Ppu {
 
     fn is_disabled(&self) -> bool { self.lcdc & 0x80 == 0 }
 
-    pub(crate) fn load(&self, addr: u16) -> u8 {
+    fn vram_offset(&self) -> usize {
+        self.vram_bank as usize * 0x2000
+    }
+
+    pub(crate) fn load(&self, addr: u16, dmg: bool) -> u8 {
         match (addr, self.get_mode()) {
             // TODO: get good timings to not glich games
             (0x8000..=0x9fff, _) => self.vram[addr as usize - 0x8000],
@@ -276,11 +302,16 @@ impl Ppu {
             (0xff48..=0xff49, _) => self.obp[addr as usize - 0xff48],
             (0xff4a, _) => self.window.1,
             (0xff4b, _) => self.window.0,
+
+            (0xff4f, _) if !dmg => self.vram_bank | 0xfe,
+
+            (0xff68, _) if !dmg => self.bcps,
+            (0xff6a, _) if !dmg => self.ocps,
             _ => 0xff,
         }
     }
 
-    pub(crate) fn store(&mut self, addr: u16, data: u8) {
+    pub(crate) fn store(&mut self, addr: u16, data: u8, dmg: bool) {
         match (addr, self.get_mode()) {
             // TODO: get good timings to not glich games
             (0x8000..=0x9fff, _) => self.vram[addr as usize - 0x8000] = data,
@@ -300,6 +331,39 @@ impl Ppu {
             (0xff48..=0xff49, _) => self.obp[addr as usize - 0xff48] = data,
             (0xff4a, _) => self.window.1 = data,
             (0xff4b, _) => self.window.0 = data,
+
+            (0xff4f, _) if !dmg => self.vram_bank = data & 1,
+
+            (0xff68, _) if !dmg => self.bcps = data & 0xbf,
+            (0xff69, _) if !dmg => {
+                let idx = ((self.bcps & 0x3f) >> 1) as usize;
+                if self.bcps & 1 == 0 { // lo
+                    self.cgb_bg_palette[idx] &= 0xff00;
+                    self.cgb_obj_palette[idx] |= data as u16;
+                } else { // hi
+                    self.cgb_bg_palette[idx] &= 0x00ff;
+                    self.cgb_bg_palette[idx] |= (data as u16) << 8;
+                }
+
+                if self.bcps & 0x80 != 0 {
+                    self.bcps = (self.bcps + 1) & 0xbf;
+                }
+            },
+            (0xff6a, _) if !dmg => self.ocps = data & 0xbf,
+            (0xff6b, _) if !dmg => {
+                let idx = ((self.ocps & 0x3f) >> 1) as usize;
+                if self.ocps & 1 == 0 { // lo
+                    self.cgb_obj_palette[idx] &= 0xff00;
+                    self.cgb_obj_palette[idx] |= data as u16;
+                } else { // hi
+                    self.cgb_obj_palette[idx] &= 0x00ff;
+                    self.cgb_obj_palette[idx] |= (data as u16) << 8;
+                }
+
+                if self.ocps & 0x80 != 0 {
+                    self.ocps = (self.ocps + 1) & 0xbf;
+                }
+            },
             _ => eprintln!("ppu write fail {addr:04x} {data:02x} {}", self.get_mode()),
         }
     }

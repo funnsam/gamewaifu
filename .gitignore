@@ -4,7 +4,7 @@ logs
 /*.sav
 /*.sym
 screenshot*.gif
-/dmg_boot.bin
+/*.bin
 /blargg-tests
 /mooneye-tests
 *.mp3

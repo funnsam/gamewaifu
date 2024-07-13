@@ -19,6 +19,9 @@ pub struct Sm83<Bus: bus::Bus> {
     pub div: usize,
 
     mode: Mode,
+
+    can_double_speed: bool,
+    is_double_speed: bool,
 }
 
 enum Mode {
@@ -118,7 +121,7 @@ macro_rules! setfr {
 
 
 impl<B: bus::Bus> Sm83<B> {
-    pub fn new(bus: B) -> Self {
+    pub fn new(bus: B, can_double_speed: bool) -> Self {
         Self {
             bus,
 
@@ -140,6 +143,9 @@ impl<B: bus::Bus> Sm83<B> {
             div: 0,
 
             mode: Mode::Normal,
+
+            can_double_speed,
+            is_double_speed: false,
         }
     }
 

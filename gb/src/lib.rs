@@ -18,12 +18,13 @@ impl<'a> Gameboy<'a> {
         framebuffer: Arc<Mutex<[u8; 160 * 144]>>,
         aud_callback: apu::Callback<'a>,
         keys: Arc<AtomicU8>,
+        model: Model,
     ) -> Self {
         let have_br = boot_rom.is_some();
-        let ppu = ppu::Ppu::new(framebuffer);
-        let apu = apu::Apu::new(aud_callback);
-        let bus = bus::Bus::new(ppu, apu, mapper, boot_rom, keys);
-        let mut cpu = sm83::Sm83::new(bus);
+        let ppu = ppu::Ppu::new(framebuffer, model);
+        let apu = apu::Apu::new(aud_callback, model);
+        let bus = bus::Bus::new(ppu, apu, mapper, boot_rom, keys, model);
+        let mut cpu = sm83::Sm83::new(bus, model.is_cgb());
 
         if !have_br {
             cpu.set_state(&sm83::cpu::State {
@@ -51,4 +52,29 @@ impl<'a> Gameboy<'a> {
 
     pub fn set_sram(&mut self, sram: &[u8]) { self.cpu.bus.mapper.set_sram(sram) }
     pub fn get_sram(&self) -> Option<&[u8]> { self.cpu.bus.mapper.get_sram() }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Model {
+    Dmg0,
+    DmgA,
+    DmgB,
+    DmgC,
+
+    Cgb0,
+    CgbA,
+    CgbB,
+    CgbC,
+    CgbD,
+    CgbE,
+}
+
+impl Model {
+    pub fn is_dmg(&self) -> bool {
+        matches!(self, Self::Dmg0 | Self::DmgA | Self::DmgB | Self::DmgC)
+    }
+
+    pub fn is_cgb(&self) -> bool {
+        matches!(self, Self::Cgb0 | Self::CgbA | Self::CgbB | Self::CgbC | Self::CgbD | Self::CgbE)
+    }
 }

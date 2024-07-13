@@ -1,3 +1,5 @@
+use crate::Model;
+
 pub const SAMPLE_RATE: usize = 44100;
 pub const FRAME_COUNT: usize = 1024;
 pub const BUFFER_SIZE: usize = FRAME_COUNT * 2;
@@ -24,6 +26,8 @@ pub struct Apu<'a> {
 
     volume: (u8, u8),
     vin_enabled: (bool, bool),
+
+    model: Model,
 }
 
 #[derive(Default)]
@@ -118,7 +122,7 @@ struct Envelope {
 }
 
 impl<'a> Apu<'a> {
-    pub fn new(callback: Callback<'a>) -> Self {
+    pub fn new(callback: Callback<'a>, model: Model) -> Self {
         Self {
             buffer: [0; BUFFER_SIZE],
             buffer_at: 0,
@@ -137,6 +141,8 @@ impl<'a> Apu<'a> {
 
             volume: (0, 0),
             vin_enabled: (false, false),
+
+            model,
         }
     }
 

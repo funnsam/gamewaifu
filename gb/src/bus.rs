@@ -1,5 +1,7 @@
 use std::sync::{atomic::*, *};
 
+use crate::Model;
+
 pub(crate) struct Bus<'a> {
     pub(crate) ppu: crate::ppu::Ppu,
     pub(crate) apu: crate::apu::Apu<'a>,
@@ -20,6 +22,9 @@ pub(crate) struct Bus<'a> {
     keys: Arc<AtomicU8>,
     key_sel: u8,
 
+    model: Model,
+    dmg_mode: bool,
+
     boot_rom: Option<Box<[u8]>>,
 }
 
@@ -30,6 +35,7 @@ impl<'a> Bus<'a> {
         mapper: crate::mapper::Mapper,
         boot_rom: Option<Box<[u8]>>,
         keys: Arc<AtomicU8>,
+        model: Model,
     ) -> Self {
         Self {
             ppu,
@@ -52,6 +58,9 @@ impl<'a> Bus<'a> {
             keys,
             key_sel: 0,
 
+            model,
+            dmg_mode: false,
+
             boot_rom,
         }
     }
@@ -59,7 +68,7 @@ impl<'a> Bus<'a> {
 
 impl sm83::bus::Bus for Bus<'_> {
     fn load(&mut self, a: u16) -> u8 {
-        if let (true, Some(br)) = (a <= 0x00ff, &self.boot_rom) {
+        if let (true, Some(br)) = (matches!(a, 0x0000..=0x00ff | 0x0200..=0x08ff), &self.boot_rom) {
             return br[a as usize];
         }
 
@@ -79,7 +88,8 @@ impl sm83::bus::Bus for Bus<'_> {
             0xff06 => self.tma,
             0xff07 => self.tac,
             0xff46 => self.oam_dma_at.0,
-            0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.load(a),
+            0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.load(a, self.dmg_mode),
+            0xff4f | 0xff51..=0xff55 | 0xff68..=0xff6b if !self.dmg_mode => self.ppu.load(a, self.dmg_mode),
             0xff10..=0xff3f => self.apu.load(a),
             0xff00..=0xff7f => 0xff,
             0xff80..=0xfffe => self.hram[a as usize - 0xff80],
@@ -104,7 +114,9 @@ impl sm83::bus::Bus for Bus<'_> {
             0xff06 => self.tma = d,
             0xff07 => self.tac = d & 7,
             0xff46 => self.oam_dma_at = (d, 0),
-            0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.store(a, d),
+            0xff4c if self.model.is_cgb() => self.dmg_mode = d & 0x80 == 0,
+            0x8000..=0x9fff | 0xfe00..=0xfe9f | 0xff40..=0xff45 | 0xff47..=0xff4b => self.ppu.store(a, d, self.dmg_mode),
+            0xff4f | 0xff51..=0xff55 | 0xff68..=0xff6b if !self.dmg_mode => self.ppu.store(a, d, self.dmg_mode),
             0xff10..=0xff3f => self.apu.store(a, d),
             0xff00..=0xff7f => {},
             0xff80..=0xfffe => self.hram[a as usize - 0xff80] = d,
