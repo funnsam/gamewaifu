@@ -43,7 +43,7 @@ impl Ppu {
 
             lyc: 0,
             bgp: 0x1b,
-            scroll: (9, 0),
+            scroll: (1, 0),
             window: (0, 0),
             lcdc: 0,
             obp: [0; 2],
@@ -61,9 +61,9 @@ impl Ppu {
                 discard_counter: 0,
                 bg_fifo: VecDeque::with_capacity(8),
                 obj_fifo: VecDeque::with_capacity(8),
-                fetcher_state: FetcherState::GetTile,
-                fetcher_counter: 0,
-                fetcher_x: 0,
+                state: FetcherState::GetTile,
+                state_counter: 0,
+                x: 0,
                 can_window: false,
                 in_window: false,
                 wlx: 0,
@@ -128,7 +128,7 @@ impl Ppu {
                 if !self.fetcher.bg_fifo.is_empty() {
                     let bg = self.fetcher.bg_fifo.pop_front().unwrap();
 
-                    if self.fetcher.discard_counter == 0 {
+                   if self.fetcher.discard_counter == 0 {
                         self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = if self.lcdc & 1 != 0 {
                             (self.bgp >> (bg.color * 2)) & 3
                         } else {
@@ -217,7 +217,7 @@ impl Ppu {
             },
             (0xff41, _) => self.stat = data & 0x78,
             (0xff42, _) => self.scroll.1 = data,
-            (0xff43, _) => {},// self.scroll.0 = data,
+            (0xff43, _) => self.scroll.0 = data,
             (0xff45, _) => self.lyc = data,
             (0xff47, _) => self.bgp = data,
             (0xff48..=0xff49, _) => self.obp[addr as usize - 0xff48] = data,
@@ -241,9 +241,9 @@ struct PixelFetcher {
     discard_counter: u8,
     bg_fifo: VecDeque<FifoPixel>,
     obj_fifo: VecDeque<FifoPixel>,
-    fetcher_state: FetcherState,
-    fetcher_counter: usize,
-    fetcher_x: u8,
+    state: FetcherState,
+    state_counter: usize,
+    x: u8,
     can_window: bool,
     in_window: bool,
     wlx: u8,
@@ -265,10 +265,11 @@ impl PixelFetcher {
         self.obj_fifo.clear();
         self.lx = 0;
         self.wlx = 0;
-        self.fetcher_x = 0;
+        self.x = 0;
         self.can_window = lcdc & 0x20 != 0 && window.0 <= 166 && window.1 <= ly;
         self.in_window = false;
-        self.discard_counter = scroll.0 % 8 + 8;
+        self.discard_counter = scroll.0 % 8;
+        self.state = FetcherState::GetTile;
     }
 
     fn fetch_bg<F: Fn(u8) -> usize>(
@@ -280,53 +281,53 @@ impl PixelFetcher {
         tiledata: F,
         vram: &[u8],
     ) {
-        if self.fetcher_counter != 0 {
-            self.fetcher_counter -= 1;
+        if self.state_counter != 0 {
+            self.state_counter -= 1;
             return;
         }
 
         if self.can_window && !self.in_window && self.lx + 7 == window.0 {
             self.bg_fifo.clear();
-            self.fetcher_state = FetcherState::GetTile;
+            self.state = FetcherState::GetTile;
             self.in_window = true;
         }
 
-        match &mut self.fetcher_state {
+        match &mut self.state {
             FetcherState::GetTile => {
-                self.fetcher_counter = 1;
+                self.state_counter = 1;
 
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
                 let (x, y, i) = if !self.in_window {
                     let y = scroll.1 + ly;
-                    self.fetcher_x += 1;
-                    (scroll.0 / 8 + self.fetcher_x - 1, y / 8, y % 8)
+                    self.x += 1;
+                    (scroll.0 / 8 + self.x - 1, y / 8, y % 8)
                 } else {
                     self.wlx += 1;
                     (self.wlx - 1, self.wly / 8, self.wly % 8)
                 };
 
                 let tile = vram[tilemap + (x % 32) as usize + y as usize * 32];
-                self.fetcher_state = FetcherState::GetTileDataLo(tile, i);
+                self.state = FetcherState::GetTileDataLo(tile, i);
             },
             FetcherState::GetTileDataLo(tile, y) => {
-                self.fetcher_counter = 1;
+                self.state_counter = 1;
 
                 let tile = *tile;
                 let y = *y;
                 let tiledata = tiledata(tile) + y as usize * 2;
                 let lo = vram[tiledata];
-                self.fetcher_state = FetcherState::GetTileDataHi(tile, y, lo);
+                self.state = FetcherState::GetTileDataHi(tile, y, lo);
             },
             FetcherState::GetTileDataHi(tile, y, lo) => {
-                self.fetcher_counter = 3;
+                self.state_counter = 3;
 
                 let tile = *tile;
                 let y = *y;
                 let lo = *lo;
                 let tiledata = tiledata(tile) + y as usize * 2 + 1;
                 let hi = vram[tiledata];
-                self.fetcher_state = FetcherState::Push(lo, hi);
+                self.state = FetcherState::Push(lo, hi);
             },
             FetcherState::Push(lo, hi) => {
                 if self.bg_fifo.is_empty() {
@@ -341,7 +342,7 @@ impl PixelFetcher {
                         *hi <<= 1;
                     }
 
-                    self.fetcher_state = FetcherState::GetTile;
+                    self.state = FetcherState::GetTile;
                 }
             },
         }
