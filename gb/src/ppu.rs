@@ -266,10 +266,10 @@ impl PixelFetcher {
         self.obj_fifo.clear();
         self.lx = 0;
         self.wlx = 0;
-        self.x = 0;
+        self.x = 255;
         self.can_window = lcdc & 0x20 != 0 && window.0 <= 166 && window.1 <= ly;
         self.in_window = false;
-        self.discard_counter = scroll.0 % 8;
+        self.discard_counter = scroll.0 % 8 + 8;
         self.state = FetcherState::GetTile;
     }
 
