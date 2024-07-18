@@ -69,6 +69,8 @@ impl Ppu {
                 in_window: false,
                 wlx: 0,
                 wly: 0,
+
+                sprite_mode: None,
             },
 
             stat_lines: 0,
@@ -117,7 +119,7 @@ impl Ppu {
                     self.fetcher.reset_scanline(self.lcdc, self.ly, self.window, self.scroll);
                 }
 
-                self.fetcher.fetch_bg(
+                self.fetcher.fetch(
                     self.lcdc,
                     self.ly,
                     self.window,
@@ -126,14 +128,14 @@ impl Ppu {
                     &self.vram
                 );
 
-                if !self.fetcher.bg_fifo.is_empty() {
-                    let bg = self.fetcher.bg_fifo.pop().unwrap();
+                if let Some(bg) = self.fetcher.bg_fifo.pop() {
+                    let ob = self.fetcher.obj_fifo.pop();
 
-                   if self.fetcher.discard_counter == 0 {
-                        self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = if self.lcdc & 1 != 0 {
-                            (self.bgp >> (bg.color * 2)) & 3
-                        } else {
-                            self.bgp & 3
+                    if self.fetcher.discard_counter == 0 {
+                        self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = match ob {
+                            Some(c) => c.color,
+                            _ if self.lcdc & 1 != 0 => (self.bgp >> (bg.color * 2)) & 3,
+                            _ => self.bgp & 3,
                         };
 
                         self.fetcher.lx += 1;
@@ -141,6 +143,12 @@ impl Ppu {
                             self.mode = Mode::HBlank;
 
                             if self.fetcher.can_window { self.fetcher.wly += 1; }
+                        }
+
+                        if self.fetcher.lx == self.m2_objs[0].1 && self.m2_objc != 0 {
+                            self.fetcher.sprite_mode = Some(self.m2_objs[0]);
+                            self.fetcher.state = FetcherState::GetTile;
+                            self.fetcher.bg_fifo.clear();
                         }
                     } else {
                         self.fetcher.discard_counter -= 1;
@@ -249,6 +257,8 @@ struct PixelFetcher {
     in_window: bool,
     wlx: u8,
     wly: u8,
+
+    sprite_mode: Option<(u8, u8, u8, u8)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -271,9 +281,10 @@ impl PixelFetcher {
         self.in_window = false;
         self.discard_counter = scroll.0 % 8 + 8;
         self.state = FetcherState::GetTile;
+        self.sprite_mode = None;
     }
 
-    fn fetch_bg<F: Fn(u8) -> usize>(
+    fn fetch<F: Fn(u8) -> usize>(
         &mut self,
         lcdc: u8,
         ly: u8,
@@ -287,11 +298,11 @@ impl PixelFetcher {
             return;
         }
 
-        if self.can_window && !self.in_window && self.lx + 7 == window.0 {
-            self.bg_fifo.clear();
-            self.state = FetcherState::GetTile;
-            self.in_window = true;
-        }
+        // if self.can_window && !self.in_window && self.lx + 7 == window.0 {
+        //     self.bg_fifo.clear();
+        //     self.state = FetcherState::GetTile;
+        //     self.in_window = true;
+        // }
 
         match &mut self.state {
             FetcherState::GetTile => {
@@ -299,16 +310,20 @@ impl PixelFetcher {
 
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
-                let (x, y, i) = if !self.in_window {
-                    let y = scroll.1 + ly;
-                    self.x += 1;
-                    (scroll.0 / 8 + self.x - 1, y / 8, y % 8)
+                let (tile, i) = if let Some(ob) = self.sprite_mode {
+                    (ob.2, (ob.0 + ly) % 8)
                 } else {
-                    self.wlx += 1;
-                    (self.wlx - 1, self.wly / 8, self.wly % 8)
-                };
+                    let (x, y, i) = if !self.in_window {
+                        let y = scroll.1 + ly;
+                        self.x += 1;
+                        (scroll.0 / 8 + self.x - 1, y / 8, y % 8)
+                    } else {
+                        self.wlx += 1;
+                        (self.wlx - 1, self.wly / 8, self.wly % 8)
+                    };
 
-                let tile = vram[tilemap + (x % 32) as usize + y as usize * 32];
+                    (vram[tilemap + (x % 32) as usize + y as usize * 32], i)
+                };
                 self.state = FetcherState::GetTileDataLo(tile, i);
             },
             FetcherState::GetTileDataLo(tile, y) => {
@@ -316,7 +331,7 @@ impl PixelFetcher {
 
                 let tile = *tile;
                 let y = *y;
-                let tiledata = tiledata(tile) + y as usize * 2;
+                let tiledata = if self.sprite_mode.is_none() { tiledata(tile) } else { tile as usize * 16 } + y as usize * 2;
                 let lo = vram[tiledata];
                 self.state = FetcherState::GetTileDataHi(tile, y, lo);
             },
@@ -326,24 +341,28 @@ impl PixelFetcher {
                 let tile = *tile;
                 let y = *y;
                 let lo = *lo;
-                let tiledata = tiledata(tile) + y as usize * 2 + 1;
+                let tiledata = if self.sprite_mode.is_none() { tiledata(tile) } else { tile as usize * 16 } + y as usize * 2 + 1;
                 let hi = vram[tiledata];
                 self.state = FetcherState::Push(lo, hi);
             },
             FetcherState::Push(lo, hi) => {
-                if self.bg_fifo.is_empty() {
+                let fifo = if self.sprite_mode.is_none() { &mut self.bg_fifo } else { &mut self.obj_fifo };
+
+                if self.sprite_mode.is_some() || fifo.is_empty() {
                     for _ in 0..8 {
                         let px = FifoPixel {
                             color: ((*hi & 0x80) >> 6) | (*lo >> 7),
                             bg_priority: false,
                         };
-                        self.bg_fifo.push(px);
+
+                        fifo.push(px);
 
                         *lo <<= 1;
                         *hi <<= 1;
                     }
 
                     self.state = FetcherState::GetTile;
+                    self.sprite_mode = None;
                 }
             },
         }
