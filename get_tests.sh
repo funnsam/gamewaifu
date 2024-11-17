@@ -16,3 +16,10 @@ fi
 if [ ! -e dmg-acid2.gb ]; then
     wget "https://github.com/mattcurrie/dmg-acid2/releases/download/v1.0/dmg-acid2.gb"
 fi
+
+if [ ! -e mealybug-tearoom-tests ]; then
+    wget "https://raw.githubusercontent.com/mattcurrie/mealybug-tearoom-tests/master/mealybug-tearoom-tests.zip" && {
+        unzip mealybug-tearoom-tests.zip -d mealybug-tearoom-tests
+        rm mealybug-tearoom-tests.zip
+    }
+fi

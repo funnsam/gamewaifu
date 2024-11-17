@@ -394,7 +394,7 @@ dependencies = [
 
 [[package]]
 name = "front_console"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "ctrlc",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "front_raylib"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "gb",
@@ -422,7 +422,7 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "gb"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "derivative",
  "sm83",
