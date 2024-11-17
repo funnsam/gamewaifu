@@ -1,9 +1,12 @@
 use std::sync::{atomic::*, *};
 
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub(crate) struct Bus<'a> {
     pub(crate) ppu: crate::ppu::Ppu,
     pub(crate) apu: crate::apu::Apu<'a>,
 
+    #[derivative(Debug = "ignore")]
     pub(crate) mapper: crate::mapper::Mapper,
     pub(crate) wram: [u8; 0x2000],
     pub(crate) hram: [u8; 0x7f],
@@ -18,7 +21,7 @@ pub(crate) struct Bus<'a> {
     timer_reload: bool,
 
     keys: Arc<AtomicU8>,
-    key_sel: u8,
+    pub(crate) key_sel: u8,
 
     boot_rom: Option<Box<[u8]>>,
 }
@@ -40,7 +43,7 @@ impl<'a> Bus<'a> {
             wram: [0; 0x2000],
             hram: [0; 0x7f],
 
-            oam_dma_at: (0, 0xff),
+            oam_dma_at: (0xff, 0xff),
 
             tima: 0,
             tma: 0,
@@ -50,7 +53,7 @@ impl<'a> Bus<'a> {
             timer_reload: false,
 
             keys,
-            key_sel: 0,
+            key_sel: 0xc0,
 
             boot_rom,
         }
@@ -75,6 +78,8 @@ impl sm83::bus::Bus for Bus<'_> {
                 let sl = if self.key_sel & 0x20 == 0 { keys >> 4 } else { 0 };
                 (0xf | self.key_sel) & !dp & !sl
             },
+            0xff01 => 0x00,
+            0xff02 => 0x7e,
             0xff05 => self.tima,
             0xff06 => self.tma,
             0xff07 => self.tac,

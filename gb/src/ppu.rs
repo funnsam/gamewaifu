@@ -1,24 +1,28 @@
 use std::sync::{Arc, Mutex};
 
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct Ppu {
+    #[derivative(Debug = "ignore")]
     front_buffer: Arc<Mutex<[u8; 160 * 144]>>,
+    #[derivative(Debug = "ignore")]
     back_buffer: [u8; 160 * 144],
 
-    vram: [u8; 0x2000],
+    pub(crate) vram: [u8; 0x2000],
     pub(crate) oam: [u8; 0xa0],
 
-    ly: u8,
+    pub(crate) ly: u8,
     lyc: u8,
-    bgp: u8,
+    pub(crate) bgp: u8,
     scroll: (u8, u8),
     window: (u8, u8),
-    lcdc: u8,
+    pub(crate) lcdc: u8,
     obp: [u8; 2],
 
-    stat: u8,
+    pub(crate) stat: u8,
     wly: u8,
 
-    hsync: usize,
+    pub(crate) hsync: usize,
     stat_request: u8,
 
     mode_3_penalty: usize,
@@ -252,7 +256,7 @@ impl Ppu {
     }
 
     fn get_stat(&self) -> u8 {
-        self.stat | (((self.ly == self.lyc) as u8) << 2) | self.get_mode() as u8
+        0x80 | self.stat | (((self.ly == self.lyc) as u8) << 2) | self.get_mode() as u8
     }
 
     fn set_stat(&mut self, v: u8) {
