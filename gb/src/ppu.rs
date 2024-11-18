@@ -38,6 +38,42 @@ struct FifoPixel {
     palette: u8,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Mode {
+    OamScan = 2,
+    DrawPixel = 3,
+    HBlank = 0,
+    VBlank = 1,
+}
+
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
+struct PixelFetcher {
+    lx: u8,
+    discard_counter: u8,
+    bg_fifo: FifoQueue<FifoPixel, 8>,
+    obj_fifo: FifoQueue<FifoPixel, 8>,
+    state: FetcherState,
+    state_counter: usize,
+    x: u8,
+    can_window: bool,
+    in_window: bool,
+    wlx: u8,
+    wly: u8,
+
+    sprite_mode: Option<(u8, u8, u8, u8)>,
+    next_sprite_mode: Option<(u8, u8, u8, u8)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FetcherState {
+    GetTile,
+    GetTileDataLo(u8, u8),
+    GetTileDataHi(u8, u8, u8),
+    // NOTE: GetTileDataHi contains the sleep
+    Push(u8, u8),
+}
+
 impl Ppu {
     pub fn new(front_buffer: Arc<Mutex<[u8; 160 * 144]>>) -> Self {
         Self {
@@ -76,6 +112,7 @@ impl Ppu {
                 wly: 0,
 
                 sprite_mode: None,
+                next_sprite_mode: None,
             },
 
             stat_lines: 0,
@@ -140,7 +177,7 @@ impl Ppu {
                     &self.obp,
                 );
 
-                if self.fetcher.sprite_mode.is_none() {
+                if self.fetcher.sprite_mode.is_none() && self.fetcher.next_sprite_mode.is_none() {
                     if let Some(bg) = self.fetcher.bg_fifo.pop() {
                         let ob = self.fetcher.obj_fifo.pop();
 
@@ -160,7 +197,8 @@ impl Ppu {
 
                             for o in self.m2_objs[..self.m2_objc].iter() {
                                 if self.fetcher.lx + 8 == o.1 {
-                                    self.fetcher.sprite_mode = Some(o.clone());
+                                    // eprintln!("{:?} {:02x} {}", self.fetcher.state, o.1, self.fetcher.bg_fifo.len());
+                                    self.fetcher.next_sprite_mode = Some(o.clone());
                                     self.fetcher.state = FetcherState::GetTile;
                                     self.fetcher.x -= 1;
                                     break;
@@ -254,41 +292,6 @@ impl Ppu {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Mode {
-    OamScan = 2,
-    DrawPixel = 3,
-    HBlank = 0,
-    VBlank = 1,
-}
-
-#[derive(derivative::Derivative)]
-#[derivative(Debug)]
-struct PixelFetcher {
-    lx: u8,
-    discard_counter: u8,
-    bg_fifo: FifoQueue<FifoPixel, 8>,
-    obj_fifo: FifoQueue<FifoPixel, 8>,
-    state: FetcherState,
-    state_counter: usize,
-    x: u8,
-    can_window: bool,
-    in_window: bool,
-    wlx: u8,
-    wly: u8,
-
-    sprite_mode: Option<(u8, u8, u8, u8)>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum FetcherState {
-    GetTile,
-    GetTileDataLo(u8, u8),
-    GetTileDataHi(u8, u8, u8),
-    // NOTE: GetTileDataHi contains the sleep
-    Push(u8, u8),
-}
-
 impl PixelFetcher {
     fn reset_scanline(&mut self, lcdc: u8, ly: u8, window: (u8, u8), scroll: (u8, u8)) {
         self.bg_fifo.clear();
@@ -301,6 +304,7 @@ impl PixelFetcher {
         self.discard_counter = scroll.0 % 8 + 8;
         self.state = FetcherState::GetTile;
         self.sprite_mode = None;
+        self.next_sprite_mode = None;
     }
 
     fn fetch<F: Fn(u8) -> usize>(
@@ -327,6 +331,7 @@ impl PixelFetcher {
         match &mut self.state {
             FetcherState::GetTile => {
                 self.state_counter = 1;
+                self.sprite_mode = core::mem::take(&mut self.next_sprite_mode);
 
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
@@ -417,7 +422,6 @@ impl PixelFetcher {
                     }
 
                     self.state = FetcherState::GetTile;
-                    self.sprite_mode = None;
                 }
             },
         }
