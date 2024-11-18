@@ -21,7 +21,7 @@ pub struct Ppu {
 
     scanline_dot: usize,
     pub(crate) ly: u8,
-    mode: Mode,
+    pub(crate) mode: Mode,
 
     m2_objs: [(u8, u8, u8, u8); 10],
     m2_objc: usize,
@@ -35,6 +35,7 @@ pub struct Ppu {
 struct FifoPixel {
     color: u8,
     bg_priority: bool,
+    palette: u8,
 }
 
 impl Ppu {
@@ -96,22 +97,25 @@ impl Ppu {
                 if self.scanline_dot == 0 {
                     self.m2_objc = 0;
 
-                    let long = self.lcdc & 4 != 0;
-                    let height = if long { 16 } else { 8 };
+                    if self.lcdc & 2 != 0 {
+                        let long = self.lcdc & 4 != 0;
+                        let height = if long { 16 } else { 8 };
 
-                    for o in 0..40 {
-                        let obj = &self.oam[o * 4..o * 4 + 4];
-                        let oy = obj[0] as isize - 16;
+                        for o in 0..40 {
+                            let obj = &self.oam[o * 4..o * 4 + 4];
+                            let oy = obj[0];
 
-                        if (oy..oy + height as isize).contains(&(self.ly as isize)) {
-                            self.m2_objs[self.m2_objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().into();
-                            self.m2_objc += 1;
-                            if self.m2_objc >= 10 { break; }
+                            if (oy..oy + height).contains(&(self.ly + 16)) {
+                                self.m2_objs[self.m2_objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().into();
+                                self.m2_objs[self.m2_objc].2 &= 0xfe | (!long as u8);
+                                self.m2_objc += 1;
+                                if self.m2_objc >= 10 { break; }
+                            }
                         }
-                    }
 
-                    let objs = &mut self.m2_objs[..self.m2_objc];
-                    objs.sort_by_key(|o| o.1);
+                        let objs = &mut self.m2_objs[..self.m2_objc];
+                        objs.sort_by_key(|o| o.1);
+                    }
                 }
 
                 if self.scanline_dot >= 79 {
@@ -129,34 +133,39 @@ impl Ppu {
                     self.window,
                     self.scroll,
                     |t| Self::get_tiledata_addr(self.lcdc, t),
-                    &self.vram
+                    &self.vram,
+                    &self.obp,
                 );
 
-                if let Some(bg) = self.fetcher.bg_fifo.pop() {
-                    let ob = self.fetcher.obj_fifo.pop();
+                if self.fetcher.sprite_mode.is_none() {
+                    if let Some(bg) = self.fetcher.bg_fifo.pop() {
+                        let ob = self.fetcher.obj_fifo.pop();
 
-                    if self.fetcher.discard_counter == 0 {
-                        self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = match ob {
-                            Some(c) => c.color,
-                            _ if self.lcdc & 1 != 0 => (self.bgp >> (bg.color * 2)) & 3,
-                            _ => self.bgp & 3,
-                        };
+                        if self.fetcher.discard_counter == 0 {
+                            self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = match ob {
+                                Some(c) if c.color != 0 && (!c.bg_priority || bg.color == 0) => (c.palette >> (c.color * 2)) & 3,
+                                _ if self.lcdc & 1 != 0 => (self.bgp >> (bg.color * 2)) & 3,
+                                _ => self.bgp & 3,
+                            } | ((ob.is_some() as u8) << 2);
 
-                        self.fetcher.lx += 1;
-                        if self.fetcher.lx >= 160 {
-                            self.mode = Mode::HBlank;
+                            self.fetcher.lx += 1;
+                            if self.fetcher.lx >= 160 {
+                                self.mode = Mode::HBlank;
 
-                            if self.fetcher.can_window { self.fetcher.wly += 1; }
-                            // eprintln!("{}", self.scanline_dot);
+                                if self.fetcher.can_window { self.fetcher.wly += 1; }
+                                // eprintln!("{}", self.scanline_dot);
+                            }
+
+                            for o in self.m2_objs[..self.m2_objc].iter() {
+                                if self.fetcher.lx + 8 == o.1 {
+                                    self.fetcher.sprite_mode = Some(o.clone());
+                                    self.fetcher.state = FetcherState::GetTile;
+                                    // self.fetcher.bg_fifo.clear();
+                                }
+                            }
+                        } else {
+                            self.fetcher.discard_counter -= 1;
                         }
-
-                        if self.fetcher.lx + 8 == self.m2_objs[0].1 && self.m2_objc != 0 {
-                            self.fetcher.sprite_mode = Some(self.m2_objs[0]);
-                            self.fetcher.state = FetcherState::GetTile;
-                            // self.fetcher.bg_fifo.clear();
-                        }
-                    } else {
-                        self.fetcher.discard_counter -= 1;
                     }
                 }
             },
@@ -243,7 +252,7 @@ impl Ppu {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum Mode {
+pub(crate) enum Mode {
     OamScan = 2,
     DrawPixel = 3,
     HBlank = 0,
@@ -299,6 +308,7 @@ impl PixelFetcher {
         scroll: (u8, u8),
         tiledata: F,
         vram: &[u8],
+        obp: &[u8; 2],
     ) {
         if self.state_counter != 0 {
             self.state_counter -= 1;
@@ -318,7 +328,8 @@ impl PixelFetcher {
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
                 let (tile, i) = if let Some(ob) = self.sprite_mode {
-                    (ob.2, (ob.0 + ly) % 8)
+                    self.x -= 1; // FIX: somewhere is off by 1
+                    (ob.2 + (ob.0 <= ly + 8) as u8, (ob.0 + ly) % 8)
                 } else {
                     let (x, y, i) = if !self.in_window {
                         let y = scroll.1 + ly;
@@ -353,16 +364,51 @@ impl PixelFetcher {
                 self.state = FetcherState::Push(lo, hi);
             },
             FetcherState::Push(lo, hi) => {
-                let fifo = if self.sprite_mode.is_none() { &mut self.bg_fifo } else { &mut self.obj_fifo };
+                if self.sprite_mode.is_none() {
+                    if self.bg_fifo.is_empty() {
+                        for _ in 0..8 {
+                            let px = FifoPixel {
+                                color: ((*hi & 0x80) >> 6) | (*lo >> 7),
+                                bg_priority: false,
+                                palette: 0,
+                            };
 
-                if self.sprite_mode.is_some() || fifo.is_empty() {
-                    for _ in 0..8 {
+                            self.bg_fifo.push(px);
+
+                            *lo <<= 1;
+                            *hi <<= 1;
+                        }
+
+                        self.state = FetcherState::GetTile;
+                    }
+                } else {
+                    let bg_priority = self.sprite_mode.unwrap().3 & 0x80 != 0;
+                    let palette = obp[((self.sprite_mode.unwrap().3 >> 4) & 1) as usize];
+                    let pre_head = self.obj_fifo.len();
+
+                    for i in 0..pre_head {
                         let px = FifoPixel {
                             color: ((*hi & 0x80) >> 6) | (*lo >> 7),
-                            bg_priority: false,
+                            bg_priority,
+                            palette,
                         };
 
-                        fifo.push(px);
+                        *lo <<= 1;
+                        *hi <<= 1;
+
+                        if px.color != 0 {
+                            *self.obj_fifo.get_mut_after_pop_head(i).unwrap() = px;
+                        }
+                    }
+
+                    for _ in pre_head..8 {
+                        let px = FifoPixel {
+                            color: ((*hi & 0x80) >> 6) | (*lo >> 7),
+                            bg_priority,
+                            palette,
+                        };
+
+                        self.obj_fifo.push(px);
 
                         *lo <<= 1;
                         *hi <<= 1;
@@ -401,6 +447,22 @@ impl<T, const CAP: usize> FifoQueue<T, CAP> {
     pub fn clear(&mut self) {
         self.push_head = self.pop_head;
         self.length = 0;
+    }
+
+    pub fn get_after_pop_head(&self, rel: usize) -> Option<&T> {
+        if self.len() <= rel {
+            return None;
+        }
+
+        Some(&self.queue[(self.pop_head + rel) % CAP])
+    }
+
+    pub fn get_mut_after_pop_head(&mut self, rel: usize) -> Option<&mut T> {
+        if self.len() <= rel {
+            return None;
+        }
+
+        Some(&mut self.queue[(self.pop_head + rel) % CAP])
     }
 }
 

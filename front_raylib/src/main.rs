@@ -64,7 +64,11 @@ fn main() {
         );
 
         if rl.is_key_pressed(KeyboardKey::KEY_T) {
-            let color_map = PALETTE.iter().flat_map(|v| TryInto::<[u8; 3]>::try_into(&v.to_be_bytes()[..3]).unwrap()).collect::<Vec<u8>>();
+            let color_map = if !rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
+                PALETTE.iter().flat_map(|v| TryInto::<[u8; 3]>::try_into(&v.to_be_bytes()[..3]).unwrap()).collect::<Vec<u8>>()
+            } else {
+                vec![0xff, 0xff, 0xff, 0xaa, 0xaa, 0xaa, 0x55, 0x55, 0x55, 0x00, 0x00, 0x00]
+            };
 
             let mut image = std::fs::File::create(&format!("screenshot_{}.gif", std::time::UNIX_EPOCH.elapsed().unwrap().as_millis())).unwrap();
             let mut encoder = gif::Encoder::new(&mut image, 160, 144, &color_map).unwrap();
@@ -81,10 +85,12 @@ fn main() {
     }
 
     const PALETTE: [u32; 8] = [
+        // normal colors
         0xf5faefff,
         0x86c270ff,
         0x2f6957ff,
         0x0b1920ff,
+        // debug colors
         0xf50000ff,
         0x860000ff,
         0x2f0000ff,

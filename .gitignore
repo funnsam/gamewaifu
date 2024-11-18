@@ -7,3 +7,4 @@
 *.wav
 logs
 screenshot*.gif
+/reference-dmg.png

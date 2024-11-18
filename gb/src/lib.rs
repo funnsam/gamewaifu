@@ -81,6 +81,7 @@ impl<'a> Gameboy<'a> {
 
             cpu.bus.ppu.lcdc = 0x91;
             cpu.bus.ppu.ly = 153;
+            cpu.bus.ppu.mode = ppu::Mode::VBlank;
             cpu.bus.ppu.bgp = 0xfc;
             // cpu.bus.ppu.hsync = 132;
         }
