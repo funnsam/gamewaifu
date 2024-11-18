@@ -6,15 +6,15 @@ pub struct Sm83<Bus: bus::Bus> {
     pub bus: Bus,
 
     regs: [u8; 8], // ordering according to constants to speedup lookup time
-    sp: u16,
-    pc: u16,
+    pub sp: u16,
+    pub pc: u16,
     ir: u8,
     ime: bool,
 
     cycles: usize,
     after_ei: bool,
 
-    ints: InterruptManager,
+    pub ints: InterruptManager,
 
     pub div: usize,
 
@@ -801,8 +801,8 @@ impl<B: bus::Bus> Sm83<B> {
 }
 
 pub struct InterruptManager {
-    pending: u8,
-    enabled: u8,
+    pub pending: u8,
+    pub enabled: u8,
 }
 
 impl InterruptManager {

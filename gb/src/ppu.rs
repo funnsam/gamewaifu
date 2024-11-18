@@ -1,22 +1,26 @@
 use std::sync::{Arc, Mutex};
 
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct Ppu {
+    #[derivative(Debug = "ignore")]
     front_buffer: Arc<Mutex<[u8; 160 * 144]>>,
+    #[derivative(Debug = "ignore")]
     back_buffer: [u8; 160 * 144],
 
-    vram: [u8; 0x2000],
+    pub(crate) vram: [u8; 0x2000],
     pub(crate) oam: [u8; 0xa0],
 
     lyc: u8,
-    bgp: u8,
+    pub(crate) bgp: u8,
     scroll: (u8, u8),
     window: (u8, u8),
-    lcdc: u8,
+    pub(crate) lcdc: u8,
     obp: [u8; 2],
-    stat: u8,
+    pub(crate) stat: u8,
 
     scanline_dot: usize,
-    ly: u8,
+    pub(crate) ly: u8,
     mode: Mode,
 
     m2_objs: [(u8, u8, u8, u8); 10],
@@ -27,7 +31,7 @@ pub struct Ppu {
     stat_lines: u8,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 struct FifoPixel {
     color: u8,
     bg_priority: bool,
@@ -143,12 +147,13 @@ impl Ppu {
                             self.mode = Mode::HBlank;
 
                             if self.fetcher.can_window { self.fetcher.wly += 1; }
+                            // eprintln!("{}", self.scanline_dot);
                         }
 
-                        if self.fetcher.lx == self.m2_objs[0].1 && self.m2_objc != 0 {
+                        if self.fetcher.lx + 8 == self.m2_objs[0].1 && self.m2_objc != 0 {
                             self.fetcher.sprite_mode = Some(self.m2_objs[0]);
                             self.fetcher.state = FetcherState::GetTile;
-                            self.fetcher.bg_fifo.clear();
+                            // self.fetcher.bg_fifo.clear();
                         }
                     } else {
                         self.fetcher.discard_counter -= 1;
@@ -245,6 +250,8 @@ enum Mode {
     VBlank = 1,
 }
 
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 struct PixelFetcher {
     lx: u8,
     discard_counter: u8,
@@ -336,7 +343,7 @@ impl PixelFetcher {
                 self.state = FetcherState::GetTileDataHi(tile, y, lo);
             },
             FetcherState::GetTileDataHi(tile, y, lo) => {
-                self.state_counter = 3;
+                self.state_counter = 1;
 
                 let tile = *tile;
                 let y = *y;
@@ -369,6 +376,7 @@ impl PixelFetcher {
     }
 }
 
+#[derive(Debug)]
 pub struct FifoQueue<T, const CAP: usize> {
     queue: [T; CAP],
     push_head: usize,

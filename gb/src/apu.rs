@@ -6,55 +6,63 @@ const SQ_WAVE_WAVEFORM: [u8; 4] = [0x01, 0x03, 0x0f, 0xfc];
 
 pub type Callback<'a> = Box<dyn FnMut(&[i16]) + 'a>;
 
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct Apu<'a> {
+    #[derivative(Debug = "ignore")]
     buffer: [i16; BUFFER_SIZE], // 12 fix point
     buffer_at: usize,
+    #[derivative(Debug = "ignore")]
     callback: Callback<'a>,
 
-    output_timer: usize,
-    seq_timer: usize,
-    last_div_edge: bool,
+    pub(crate) output_timer: usize,
+    pub(crate) seq_timer: usize,
+    pub(crate) last_div_edge: bool,
 
-    enable: bool,
+    pub(crate) enable: bool,
 
-    ch1: Channel1,
-    ch2: Channel2,
-    ch3: Channel3,
-    ch4: Channel4,
+    pub(crate) ch1: Channel1,
+    pub(crate) ch2: Channel2,
+    pub(crate) ch3: Channel3,
+    pub(crate) ch4: Channel4,
 
-    volume: (u8, u8),
-    vin_enabled: (bool, bool),
+    pub(crate) volume: (u8, u8),
+    pub(crate) vin_enabled: (bool, bool),
 }
 
-#[derive(Default)]
-struct Channel1 {
+#[derive(Debug, derivative::Derivative)]
+#[derivative(Default)]
+pub(crate) struct Channel1 {
     pub active: bool,
     pub triggered: bool,
+    #[derivative(Default(value = "(true, true)"))]
     pub hard_pan: (bool, bool),
 
     pub sweep_pace: u8,
     pub sweep_dir: bool, // false: increase, true: decrease
     pub sweep_step: u8,
     pub sweep_enabled: bool,
-    sweep_timer: u8,
+    pub(crate) sweep_timer: u8,
 
     pub duty: u8,
     pub period: u16,
-    internal_period: u16,
+    pub(crate) internal_period: u16,
 
     pub envelope: Envelope,
 
     pub length_timer: u8,
     pub length_en: bool,
 
-    freq_timer: u16,
-    duty_pos: u8,
+    pub(crate) freq_timer: u16,
+    pub(crate) duty_pos: u8,
 }
 
-#[derive(Default)]
-struct Channel2 {
+#[derive(Debug, derivative::Derivative)]
+#[derivative(Default)]
+pub(crate) struct Channel2 {
     pub active: bool,
     pub triggered: bool,
+    #[derivative(Default(value = "(true, true)"))]
     pub hard_pan: (bool, bool),
 
     pub duty: u8,
@@ -69,11 +77,13 @@ struct Channel2 {
     duty_pos: u8,
 }
 
-#[derive(Default)]
-struct Channel3 {
+#[derive(Debug, derivative::Derivative)]
+#[derivative(Default)]
+pub(crate) struct Channel3 {
     pub active: bool,
     pub dac_enabled: bool,
     pub triggered: bool,
+    #[derivative(Default(value = "(true, false)"))]
     pub hard_pan: (bool, bool),
 
     pub period: u16,
@@ -88,10 +98,12 @@ struct Channel3 {
     wave_pos: usize,
 }
 
-#[derive(Default)]
-struct Channel4 {
+#[derive(Debug, derivative::Derivative)]
+#[derivative(Default)]
+pub(crate) struct Channel4 {
     pub active: bool,
     pub triggered: bool,
+    #[derivative(Default(value = "(true, false)"))]
     pub hard_pan: (bool, bool),
 
     pub clock_shift: u8,
@@ -107,8 +119,8 @@ struct Channel4 {
     lfsr: u16,
 }
 
-#[derive(Default)]
-struct Envelope {
+#[derive(Default, Debug)]
+pub struct Envelope {
     pub init_vol: u8,
     pub env_dir: bool, // false = decrease, true = increase
     pub pace: u8,

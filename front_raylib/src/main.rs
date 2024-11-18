@@ -5,7 +5,7 @@ use raylib::{ffi::Vector2, prelude::*};
 
 mod args;
 
-const BURST_CYCLES: usize = gb::CLOCK_HZ / 60;
+const BURST_CYCLES: usize = gb::CLOCK_HZ / 120;
 
 fn main() {
     let (mut rl, thread) = raylib::init()
@@ -178,9 +178,9 @@ fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
             // wav.extend(0_u32.to_le_bytes());
 
             let mut gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
-                if sink.len() > 3 {
-                    for _ in 0..sink.len() { sink.skip_one(); }
-                }
+                // if sink.len() > 3 {
+                //     for _ in 0..sink.len() { sink.skip_one(); }
+                // }
 
                 sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
 
