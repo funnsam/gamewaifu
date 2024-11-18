@@ -103,6 +103,9 @@ impl Ppu {
 
                         for o in 0..40 {
                             let obj = &self.oam[o * 4..o * 4 + 4];
+                            // NOTE: debug thing
+                            //
+                            // if obj[1] == 0x3c { continue; }
                             let oy = obj[0];
 
                             if (oy..oy + height).contains(&(self.ly + 16)) {
@@ -153,14 +156,14 @@ impl Ppu {
                                 self.mode = Mode::HBlank;
 
                                 if self.fetcher.can_window { self.fetcher.wly += 1; }
-                                // eprintln!("{}", self.scanline_dot);
                             }
 
                             for o in self.m2_objs[..self.m2_objc].iter() {
                                 if self.fetcher.lx + 8 == o.1 {
                                     self.fetcher.sprite_mode = Some(o.clone());
                                     self.fetcher.state = FetcherState::GetTile;
-                                    // self.fetcher.bg_fifo.clear();
+                                    self.fetcher.x -= 1;
+                                    break;
                                 }
                             }
                         } else {
@@ -328,7 +331,6 @@ impl PixelFetcher {
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
                 let (tile, i) = if let Some(ob) = self.sprite_mode {
-                    self.x -= 1; // FIX: somewhere is off by 1
                     (ob.2 + (ob.0 <= ly + 8) as u8, (ob.0 + ly) % 8)
                 } else {
                     let (x, y, i) = if !self.in_window {
