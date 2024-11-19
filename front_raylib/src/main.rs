@@ -44,7 +44,11 @@ fn main() {
             d.draw_text_ex(&font, &format!("Display FPS {fps}\nScale {scale}"), Vector2 { x: 0.0, y: 0.0 }, 18.0, 0.0, Color::WHITE);
 
             if args.waifu {
-                d.draw_text(&format!("bruh you expected waifu??"), 0, 100, 18, Color::RED);
+                d.draw_text("bruh you expected waifu??", 0, 100, 18, Color::RED);
+            }
+
+            if PAUSED.load(Ordering::Relaxed) {
+                d.draw_text_ex(&font, "Paused", Vector2 { x: 0.0, y: 100.0 }, 18.0, 0.0, Color::WHITE);
             }
         }
 
@@ -77,14 +81,20 @@ fn main() {
             frame.height = 144;
             frame.buffer = std::borrow::Cow::Owned((*gb_fb.lock().unwrap()).to_vec());
             encoder.write_frame(&frame).unwrap();
-        } else if rl.is_key_pressed(KeyboardKey::KEY_Y) {
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_Y) {
             SAVE.store(true, Ordering::Relaxed);
+        }
+
+        if rl.is_key_pressed(KeyboardKey::KEY_P) {
+            PAUSED.fetch_xor(true, Ordering::Relaxed);
         }
 
         BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
     }
 
-    const PALETTE: [u32; 8] = [
+    const PALETTE: &[u32] = &[
         // normal colors
         0xf5faefff,
         0x86c270ff,
@@ -95,6 +105,16 @@ fn main() {
         0x860000ff,
         0x2f0000ff,
         0x0b0000ff,
+
+        0x00fa00ff,
+        0x00c200ff,
+        0x006900ff,
+        0x001900ff,
+
+        0xf5fa00ff,
+        0x86c200ff,
+        0x2f6900ff,
+        0x0b1900ff,
     ];
 
     fn convert(gb_fb: &[u8], fb: &mut [u8]) {
@@ -113,6 +133,7 @@ fn main() {
 
 static BURST: AtomicBool = AtomicBool::new(false);
 static SAVE: AtomicBool = AtomicBool::new(false);
+static PAUSED: AtomicBool = AtomicBool::new(false);
 
 fn run_emu(mut gb: gb::Gameboy, save_file: String) {
     use std::time::*;
@@ -145,6 +166,8 @@ fn run_emu(mut gb: gb::Gameboy, save_file: String) {
             SAVE.store(false, Ordering::Release);
             println!("Saved to {save_file}");
         }
+
+        while PAUSED.load(Ordering::Relaxed) { ::core::hint::spin_loop(); }
     }
 }
 
@@ -184,9 +207,9 @@ fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
             // wav.extend(0_u32.to_le_bytes());
 
             let mut gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
-                // if sink.len() > 3 {
-                //     for _ in 0..sink.len() { sink.skip_one(); }
-                // }
+                if sink.len() > 3 {
+                    for _ in 0..sink.len() { sink.skip_one(); }
+                }
 
                 sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
 

@@ -140,9 +140,6 @@ impl Ppu {
 
                         for o in 0..40 {
                             let obj = &self.oam[o * 4..o * 4 + 4];
-                            // NOTE: debug thing
-                            //
-                            // if obj[1] == 0x3c { continue; }
                             let oy = obj[0];
 
                             if (oy..oy + height).contains(&(self.ly + 16)) {
@@ -186,10 +183,11 @@ impl Ppu {
                                 Some(c) if c.color != 0 && (!c.bg_priority || bg.color == 0) => (c.palette >> (c.color * 2)) & 3,
                                 _ if self.lcdc & 1 != 0 => (self.bgp >> (bg.color * 2)) & 3,
                                 _ => self.bgp & 3,
-                            } | ((ob.is_some() as u8) << 2);
+                            } | ((ob.is_some() as u8) << 2);// | ((matches!(self.fetcher.state, FetcherState::GetTile) as u8) << 3);
 
                             self.fetcher.lx += 1;
                             if self.fetcher.lx >= 160 {
+                                // println!("{} {}", self.scanline_dot - 80, self.m2_objc);
                                 self.mode = Mode::HBlank;
 
                                 if self.fetcher.can_window { self.fetcher.wly += 1; }
@@ -197,10 +195,11 @@ impl Ppu {
 
                             for o in self.m2_objs[..self.m2_objc].iter() {
                                 if self.fetcher.lx + 8 == o.1 {
-                                    // eprintln!("{:?} {:02x} {}", self.fetcher.state, o.1, self.fetcher.bg_fifo.len());
                                     self.fetcher.next_sprite_mode = Some(o.clone());
-                                    self.fetcher.state = FetcherState::GetTile;
-                                    self.fetcher.x -= 1;
+                                    // if !matches!(self.fetcher.state, FetcherState::GetTile) {
+                                    //     self.fetcher.x -= 1;
+                                    //     self.fetcher.state = FetcherState::GetTile;
+                                    // }
                                     break;
                                 }
                             }
@@ -208,6 +207,8 @@ impl Ppu {
                             self.fetcher.discard_counter -= 1;
                         }
                     }
+                // } else {
+                //     self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize - 1] |= 0b1100;
                 }
             },
             Mode::HBlank => {
