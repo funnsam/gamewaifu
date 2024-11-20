@@ -83,6 +83,7 @@ ClearOam:
 :   jp :-
 
 VBlank:
+    ; incr sprite x, wrapping to x=-8 at x=160
     ld hl, _OAMRAM + OAMA_X
     ld a, 160 + 8
     cp a, [hl]
@@ -93,6 +94,7 @@ VBlank:
     ld [hl], a
 :
 
+    ; incr counter
     ld hl, $9813
     inc [hl]
 

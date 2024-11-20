@@ -5,5 +5,5 @@
 	rgblink -o $@ $<
 	rgbfix -v -p 0xFF $@
 
-tileset.bin: tileset.png
-	rgbgfx -o $@ $<
+tileset.bin: tileset.png palette.txt
+	rgbgfx -c hex:palette.txt -o $@ $<
