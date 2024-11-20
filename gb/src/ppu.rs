@@ -183,7 +183,7 @@ impl Ppu {
                                 Some(c) if c.color != 0 && (!c.bg_priority || bg.color == 0) => (c.palette >> (c.color * 2)) & 3,
                                 _ if self.lcdc & 1 != 0 => (self.bgp >> (bg.color * 2)) & 3,
                                 _ => self.bgp & 3,
-                            } | ((ob.is_some() as u8) << 2);// | ((matches!(self.fetcher.state, FetcherState::GetTile) as u8) << 3);
+                            } | ((matches!(self.fetcher.state, FetcherState::GetTile) as u8) << 2);
 
                             self.fetcher.lx += 1;
                             if self.fetcher.lx >= 160 {
@@ -207,8 +207,8 @@ impl Ppu {
                             self.fetcher.discard_counter -= 1;
                         }
                     }
-                // } else {
-                //     self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize - 1] |= 0b1100;
+                } else {
+                    self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize - 1] |= 0b1100;
                 }
             },
             Mode::HBlank => {
