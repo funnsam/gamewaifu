@@ -71,7 +71,7 @@ fn main() {
             let color_map = if !rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
                 PALETTE.iter().flat_map(|v| TryInto::<[u8; 3]>::try_into(&v.to_be_bytes()[..3]).unwrap()).collect::<Vec<u8>>()
             } else {
-                vec![0xff, 0xff, 0xff, 0xaa, 0xaa, 0xaa, 0x55, 0x55, 0x55, 0x00, 0x00, 0x00]
+                vec![0xff, 0xff, 0xff, 0xaa, 0xaa, 0xaa, 0x55, 0x55, 0x55, 0x00, 0x00, 0x00].repeat(4)
             };
 
             let mut image = std::fs::File::create(&format!("screenshot_{}.gif", std::time::UNIX_EPOCH.elapsed().unwrap().as_millis())).unwrap();

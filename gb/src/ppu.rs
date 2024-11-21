@@ -76,7 +76,7 @@ enum FetcherState {
 
 impl core::fmt::Debug for FifoPixel {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "c{}p{}{}", self.color, self.palette, if self.bg_priority { "!" } else { "" })
+        write!(f, "{}P{:02x}{}", self.color, self.palette, if self.bg_priority { "!" } else { "" })
     }
 }
 
@@ -169,7 +169,7 @@ impl Ppu {
                 if self.scanline_dot == 80 {
                     self.fetcher.reset_scanline(self.lcdc, self.ly, self.window, self.scroll);
                 }
-                if self.scanline_dot == 371 {
+                if self.scanline_dot == 369 {
                     println!("{} {:?}", self.ly, self.fetcher);
                 }
 
@@ -183,7 +183,7 @@ impl Ppu {
                     &self.obp,
                 );
 
-                if (self.fetcher.sprite_mode.is_none() || matches!(self.fetcher.state, FetcherState::Push(..))) && self.fetcher.next_sprite_mode.is_none() {
+                if (self.fetcher.sprite_mode.is_none()) && self.fetcher.next_sprite_mode.is_none() {
                     if let Some(bg) = self.fetcher.bg_fifo.pop() {
                         let ob = self.fetcher.obj_fifo.pop();
 
@@ -197,7 +197,7 @@ impl Ppu {
                             self.fetcher.lx += 1;
                             if self.fetcher.lx >= 160 {
                                 self.mode = Mode::HBlank;
-                                println!("{} {}", self.ly, self.scanline_dot - 80);
+                                // println!("{} {}", self.ly, self.scanline_dot - 80);
 
                                 if self.fetcher.can_window { self.fetcher.wly += 1; }
                             }
@@ -213,7 +213,7 @@ impl Ppu {
                         }
                     }
                 } else {
-                    self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize - 1] |= 0b1100;
+                    self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize - 1] |= 0b0100;
                 }
             },
             Mode::HBlank => {
