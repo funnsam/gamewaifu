@@ -10,7 +10,7 @@ SECTION "Header", ROM0[$0100]
 SECTION "Code", ROM0[$0150]
 EntryPoint:
     ; Shut down audio circuitry
-    ld a, 0
+    xor a, a
     ld [rNR52], a
 
     ; Do not turn the LCD off outside of VBlank
@@ -20,7 +20,7 @@ WaitVBlank:
     jp c, WaitVBlank
 
     ; Turn the LCD off
-    ld a, 0
+    xor a, a
     ld [rLCDC], a
 
     ; Copy the tile data
@@ -48,7 +48,7 @@ CopyTilemap:
     jp nz, CopyTilemap
 
     ; Clean OAM
-    ld a, 0
+    xor a, a
     ld b, 160
     ld hl, _OAMRAM
 ClearOam:
@@ -58,18 +58,19 @@ ClearOam:
 
     ; Set up OAM
     ld hl, _OAMRAM
-    ld a, 16
+    ld a, 8 + 16
     ld [hli], a
-    ld a, 8 + 8
+    ld a, 8
     ld [hli], a
-    ld a, 1
+    xor a, a
     ld [hli], a
     ld [hli], a
 
     ; Set palettes
     ld a, $e4
-    ld [rOBP0], a
     ld [rBGP], a
+    ld a, $1b
+    ld [rOBP0], a
 
     ; Turn the LCD on
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_BG8000 | LCDCF_OBJON | LCDCF_OBJ8
@@ -90,12 +91,12 @@ VBlank:
     jr z, :+
     inc [hl]
     jr :++
-:   ld a, 0
+:   xor a, a
     ld [hl], a
 :
 
     ; incr counter
-    ld hl, $9813
+    ld hl, $9833
     inc [hl]
 
     reti
