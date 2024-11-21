@@ -150,7 +150,6 @@ impl Ppu {
 
                             if (oy..oy + height).contains(&(self.ly + 16)) {
                                 self.m2_objs[self.m2_objc] = TryInto::<[u8; 4]>::try_into(obj).unwrap().into();
-                                self.m2_objs[self.m2_objc].2 &= 0xfe | (!long as u8);
                                 self.m2_objc += 1;
                                 if self.m2_objc >= 10 { break; }
                             }
@@ -170,7 +169,7 @@ impl Ppu {
                     self.fetcher.reset_scanline(self.lcdc, self.ly, self.window, self.scroll);
                 }
                 if self.scanline_dot == 369 {
-                    println!("{} {:?}", self.ly, self.fetcher);
+                    eprintln!("{} {:?}", self.ly, self.fetcher);
                 }
 
                 self.fetcher.fetch(
@@ -342,7 +341,7 @@ impl PixelFetcher {
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
                 let (tile, i) = if let Some(ob) = self.sprite_mode {
-                    (ob.2 + (ob.0 <= ly + 8) as u8, (ob.0 + ly) % 8)
+                    ((ob.2 & !((lcdc & 4 != 0) as u8)) + (ob.0 <= ly + 8) as u8, (ob.0 + ly) % 8)
                 } else {
                     let (x, y, i) = if !self.in_window {
                         let y = scroll.1 + ly;
