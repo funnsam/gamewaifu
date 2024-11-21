@@ -31,7 +31,7 @@ pub struct Ppu {
     stat_lines: u8,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Default)]
 struct FifoPixel {
     color: u8,
     bg_priority: bool,
@@ -51,7 +51,7 @@ pub(crate) enum Mode {
 struct PixelFetcher {
     lx: u8,
     discard_counter: u8,
-    bg_fifo: FifoQueue<FifoPixel, 8>,
+    bg_fifo: FifoQueue<u8, 16>,
     obj_fifo: FifoQueue<FifoPixel, 8>,
     state: FetcherState,
     state_counter: usize,
@@ -72,6 +72,12 @@ enum FetcherState {
     GetTileDataHi(u8, u8, u8),
     // NOTE: GetTileDataHi contains the sleep
     Push(u8, u8),
+}
+
+impl core::fmt::Debug for FifoPixel {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "c{}p{}{}", self.color, self.palette, if self.bg_priority { "!" } else { "" })
+    }
 }
 
 impl Ppu {
@@ -163,6 +169,9 @@ impl Ppu {
                 if self.scanline_dot == 80 {
                     self.fetcher.reset_scanline(self.lcdc, self.ly, self.window, self.scroll);
                 }
+                if self.scanline_dot == 371 {
+                    println!("{} {:?}", self.ly, self.fetcher);
+                }
 
                 self.fetcher.fetch(
                     self.lcdc,
@@ -174,21 +183,21 @@ impl Ppu {
                     &self.obp,
                 );
 
-                if self.fetcher.sprite_mode.is_none() && self.fetcher.next_sprite_mode.is_none() {
+                if (self.fetcher.sprite_mode.is_none() || matches!(self.fetcher.state, FetcherState::Push(..))) && self.fetcher.next_sprite_mode.is_none() {
                     if let Some(bg) = self.fetcher.bg_fifo.pop() {
                         let ob = self.fetcher.obj_fifo.pop();
 
                         if self.fetcher.discard_counter == 0 {
                             self.back_buffer[self.ly as usize * 160 + self.fetcher.lx as usize] = match ob {
-                                Some(c) if c.color != 0 && (!c.bg_priority || bg.color == 0) => (c.palette >> (c.color * 2)) & 3,
-                                _ if self.lcdc & 1 != 0 => (self.bgp >> (bg.color * 2)) & 3,
+                                Some(c) if c.color != 0 && (!c.bg_priority || bg == 0) => (c.palette >> (c.color * 2)) & 3,
+                                _ if self.lcdc & 1 != 0 => (self.bgp >> (bg * 2)) & 3,
                                 _ => self.bgp & 3,
-                            } | ((matches!(self.fetcher.state, FetcherState::GetTile) as u8) << 2);
+                            };
 
                             self.fetcher.lx += 1;
                             if self.fetcher.lx >= 160 {
-                                // println!("{} {}", self.scanline_dot - 80, self.m2_objc);
                                 self.mode = Mode::HBlank;
+                                println!("{} {}", self.ly, self.scanline_dot - 80);
 
                                 if self.fetcher.can_window { self.fetcher.wly += 1; }
                             }
@@ -196,10 +205,6 @@ impl Ppu {
                             for o in self.m2_objs[..self.m2_objc].iter() {
                                 if self.fetcher.lx + 8 == o.1 {
                                     self.fetcher.next_sprite_mode = Some(o.clone());
-                                    // if !matches!(self.fetcher.state, FetcherState::GetTile) {
-                                    //     self.fetcher.x -= 1;
-                                    //     self.fetcher.state = FetcherState::GetTile;
-                                    // }
                                     break;
                                 }
                             }
@@ -372,16 +377,12 @@ impl PixelFetcher {
                 self.state = FetcherState::Push(lo, hi);
             },
             FetcherState::Push(lo, hi) => {
-                if self.sprite_mode.is_none() {
-                    if self.bg_fifo.is_empty() {
-                        for _ in 0..8 {
-                            let px = FifoPixel {
-                                color: ((*hi & 0x80) >> 6) | (*lo >> 7),
-                                bg_priority: false,
-                                palette: 0,
-                            };
+                self.state_counter = 1;
 
-                            self.bg_fifo.push(px);
+                if self.sprite_mode.is_none() {
+                    if self.bg_fifo.len() <= 8 {
+                        for _ in 0..8 {
+                            self.bg_fifo.push(((*hi & 0x80) >> 6) | (*lo >> 7));
 
                             *lo <<= 1;
                             *hi <<= 1;
@@ -429,7 +430,6 @@ impl PixelFetcher {
     }
 }
 
-#[derive(Debug)]
 pub struct FifoQueue<T, const CAP: usize> {
     queue: [T; CAP],
     push_head: usize,
@@ -470,6 +470,20 @@ impl<T, const CAP: usize> FifoQueue<T, CAP> {
         }
 
         Some(&mut self.queue[(self.pop_head + rel) % CAP])
+    }
+}
+
+impl<T: core::fmt::Debug, const CAP: usize> core::fmt::Debug for FifoQueue<T, CAP> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "[")?;
+
+        for i in 0..self.len() {
+            if i != 0 { write!(f, ", ")?; }
+
+            write!(f, "{:?}", self.get_after_pop_head(i).unwrap())?;
+        }
+
+        write!(f, "]")
     }
 }
 
