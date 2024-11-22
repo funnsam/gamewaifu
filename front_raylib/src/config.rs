@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 pub fn get_config() -> Config {
     if let Ok(config) = std::fs::read_to_string("config.toml") {
         toml::from_str(&config).unwrap()
