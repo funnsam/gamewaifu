@@ -57,13 +57,28 @@ ClearOam:
     jp nz, ClearOam
 
     ; Set up OAM
+    ; NOTE: Bad x pairs:
+    ; 2, 3
+    ; 3, 4
+    ; 4, 5
+    ; 5, 6
+
     ld hl, _OAMRAM
     ld a, 8 + 16
     ld [hli], a
-    ld a, 8
+    ld a, 0 + 8
     ld [hli], a
     xor a, a
     ld [hli], a
+    ld [hli], a
+
+    ld a, 8 + 16
+    ld [hli], a
+    ld a, 1 + 8
+    ld [hli], a
+    xor a, a
+    ld [hli], a
+    ld a, $10
     ld [hli], a
 
     ; Set palettes
@@ -71,6 +86,8 @@ ClearOam:
     ld [rBGP], a
     ld a, $1b
     ld [rOBP0], a
+    ld a, $b1
+    ld [rOBP1], a
 
     ; Turn the LCD on
     ld a, LCDCF_ON | LCDCF_BGON | LCDCF_BG8000 | LCDCF_OBJON | LCDCF_OBJ8
@@ -84,14 +101,22 @@ ClearOam:
 :   jp :-
 
 VBlank:
+    ld b, b
+
     ; incr sprite x, wrapping to x=-8 at x=160
     ld hl, _OAMRAM + OAMA_X
+    ld de, sizeof_OAM_ATTRS
     ld a, 160 + 8
     cp a, [hl]
     jr z, :+
     inc [hl]
+    add hl, de
+    inc [hl]
     jr :++
 :   xor a, a
+    ld [hl], a
+    add hl, de
+    inc a
     ld [hl], a
 :
 

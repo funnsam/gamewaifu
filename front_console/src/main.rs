@@ -33,19 +33,24 @@ fn main() {
                 let x = mx * tmx;
                 let y = my * tmy;
 
+                // NOTE: we do not lock for entire frame here bc console slow ass
+                let fb = gb_fb.lock().unwrap();
+
                 let mut l = 0;
                 for sy in 0..tmyh {
-                    for sx in 0..tmx { // NOTE: we do not lock for entire frame here bc console slow ass
-                        l += gb_fb.lock().unwrap()[(y + sy) * 160 + x + sx] as usize & 3;
+                    for sx in 0..tmx {
+                        l += fb[(y + sy) * 160 + x + sx] as usize & 3;
                     }
                 }
 
                 let mut u = 0;
                 for sy in 0..tmyh {
                     for sx in 0..tmx {
-                        u += gb_fb.lock().unwrap()[(y + sy + tmyh) * 160 + x + sx] as usize & 3;
+                        u += fb[(y + sy + tmyh) * 160 + x + sx] as usize & 3;
                     }
                 }
+
+                drop(fb);
 
                 let u = (u + (tmx * tmyh / 2)) / (tmx * tmyh);
                 let l = (l + (tmx * tmyh / 2)) / (tmx * tmyh);
