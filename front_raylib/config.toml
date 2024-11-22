@@ -1,0 +1,27 @@
+[inputs]
+# for key IDs, refer to https://github.com/raysan5/raylib/blob/47f83aa58f7a20110b0dc0d031b377faa50dd31e/src/raylib.h#L577
+
+# default configuration
+#   W
+# A   D       O
+#   S       I
+#
+#      V  B
+
+u = 87
+l = 65
+d = 83
+r = 68
+
+a = 79
+b = 73
+
+select = 86
+start = 66
+
+save = 89       # Y
+no_save = 259   # backspace
+screenshot = 84 # T
+pause = 80      # P
+step_frame = 91 # [
+burst = 257     # enter

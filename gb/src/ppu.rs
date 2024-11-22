@@ -405,7 +405,9 @@ impl PixelFetcher {
                         *hi <<= 1;
 
                         if px.color != 0 {
-                            *self.obj_fifo.get_mut_after_pop_head(i).unwrap() = px;
+                            if self.obj_fifo.get_after_pop_head(i).unwrap().color == 0 {
+                                *self.obj_fifo.get_mut_after_pop_head(i).unwrap() = px;
+                            }
                         }
                     }
 

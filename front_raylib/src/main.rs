@@ -4,8 +4,13 @@ use clap::Parser;
 use raylib::{ffi::Vector2, prelude::*};
 
 mod args;
+mod config;
 
 const BURST_CYCLES: usize = gb::CLOCK_HZ / 120;
+
+static BURST: AtomicBool = AtomicBool::new(false);
+static SAVE: AtomicBool = AtomicBool::new(false);
+static STEP_FOR_BURSTS: AtomicIsize = AtomicIsize::new(-1);
 
 fn main() {
     let (mut rl, thread) = raylib::init()
@@ -18,11 +23,27 @@ fn main() {
     rl.set_exit_key(None);
 
     let args = args::Args::parse();
-    let (gb_fb, keys) = crate::init(&args);
+    if args.paused { STEP_FOR_BURSTS.store(0, Ordering::Relaxed); }
 
+    let config = config::get_config();
+    let key_u = key_from_i32(config.inputs.u).unwrap();
+    let key_l = key_from_i32(config.inputs.l).unwrap();
+    let key_d = key_from_i32(config.inputs.d).unwrap();
+    let key_r = key_from_i32(config.inputs.r).unwrap();
+    let key_a = key_from_i32(config.inputs.a).unwrap();
+    let key_b = key_from_i32(config.inputs.b).unwrap();
+    let key_select = key_from_i32(config.inputs.select).unwrap();
+    let key_start = key_from_i32(config.inputs.start).unwrap();
+    let key_save = key_from_i32(config.inputs.save).unwrap();
+    let key_no_save = key_from_i32(config.inputs.no_save).unwrap();
+    let key_screenshot = key_from_i32(config.inputs.screenshot).unwrap();
+    let key_pause = key_from_i32(config.inputs.pause).unwrap();
+    let key_step_frame = key_from_i32(config.inputs.step_frame).unwrap();
+    let key_burst = key_from_i32(config.inputs.burst).unwrap();
+
+    let (gb_fb, keys) = crate::init(&args);
     let mut fb = vec![0; 160 * 144 * 4];
     let mut rl_fb = rl.load_render_texture(&thread, 160, 144).unwrap();
-
     let font = rl.load_font_ex(&thread, "Roboto-Regular.ttf", 18, None).unwrap();
 
     while !rl.window_should_close() {
@@ -47,19 +68,20 @@ fn main() {
                 d.draw_text("bruh you expected waifu??", 0, 100, 18, Color::RED);
             }
 
-            if PAUSED.load(Ordering::Relaxed) {
-                d.draw_text_ex(&font, "Paused", Vector2 { x: 0.0, y: 100.0 }, 18.0, 0.0, Color::WHITE);
+            let sfb = STEP_FOR_BURSTS.load(Ordering::Relaxed);
+            if sfb != -1 {
+                d.draw_text_ex(&font, &format!("{} cycles left", sfb as usize * BURST_CYCLES), Vector2 { x: 0.0, y: 100.0 }, 18.0, 0.0, Color::WHITE);
             }
         }
 
-        let du = rl.is_key_down(KeyboardKey::KEY_W) as u8;
-        let dd = rl.is_key_down(KeyboardKey::KEY_S) as u8;
-        let dl = rl.is_key_down(KeyboardKey::KEY_A) as u8;
-        let dr = rl.is_key_down(KeyboardKey::KEY_D) as u8;
-        let sa = rl.is_key_down(KeyboardKey::KEY_O) as u8;
-        let sb = rl.is_key_down(KeyboardKey::KEY_I) as u8;
-        let sl = rl.is_key_down(KeyboardKey::KEY_V) as u8;
-        let st = rl.is_key_down(KeyboardKey::KEY_B) as u8;
+        let du = rl.is_key_down(key_u) as u8;
+        let dd = rl.is_key_down(key_d) as u8;
+        let dl = rl.is_key_down(key_l) as u8;
+        let dr = rl.is_key_down(key_r) as u8;
+        let sa = rl.is_key_down(key_a) as u8;
+        let sb = rl.is_key_down(key_b) as u8;
+        let sl = rl.is_key_down(key_select) as u8;
+        let st = rl.is_key_down(key_start) as u8;
 
         keys.store(
             dr | (dl << 1) | (du << 2) | (dd << 3)
@@ -67,7 +89,7 @@ fn main() {
             Ordering::Relaxed
         );
 
-        if rl.is_key_pressed(KeyboardKey::KEY_T) {
+        if rl.is_key_pressed(key_screenshot) {
             let color_map = if !rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
                 PALETTE.iter().flat_map(|v| TryInto::<[u8; 3]>::try_into(&v.to_be_bytes()[..3]).unwrap()).collect::<Vec<u8>>()
             } else {
@@ -83,15 +105,19 @@ fn main() {
             encoder.write_frame(&frame).unwrap();
         }
 
-        if rl.is_key_pressed(KeyboardKey::KEY_Y) {
+        if rl.is_key_pressed(key_save) {
             SAVE.store(true, Ordering::Relaxed);
         }
 
-        if rl.is_key_pressed(KeyboardKey::KEY_P) {
-            PAUSED.fetch_xor(true, Ordering::Relaxed);
+        if rl.is_key_pressed(key_pause) {
+            _ = STEP_FOR_BURSTS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(if v == -1 { 0 } else { -1 }));
         }
 
-        BURST.store(rl.is_key_down(KeyboardKey::KEY_ENTER), Ordering::Relaxed);
+        if rl.is_key_pressed(key_step_frame) {
+            _ = STEP_FOR_BURSTS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v.max(0) + (gb::CLOCK_HZ / 60 / BURST_CYCLES) as isize));
+        }
+
+        BURST.store(rl.is_key_down(key_burst), Ordering::Relaxed);
     }
 
     const PALETTE: &[u32] = &[
@@ -127,13 +153,9 @@ fn main() {
         }
     }
 
-    SAVE.store(!rl.is_key_down(KeyboardKey::KEY_BACKSPACE), Ordering::Relaxed);
+    SAVE.store(!rl.is_key_down(key_no_save), Ordering::Relaxed);
     while SAVE.load(Ordering::Relaxed) {}
 }
-
-static BURST: AtomicBool = AtomicBool::new(false);
-static SAVE: AtomicBool = AtomicBool::new(false);
-static PAUSED: AtomicBool = AtomicBool::new(false);
 
 fn run_emu(mut gb: gb::Gameboy, save_file: String) {
     use std::time::*;
@@ -167,7 +189,11 @@ fn run_emu(mut gb: gb::Gameboy, save_file: String) {
             println!("Saved to {save_file}");
         }
 
-        while PAUSED.load(Ordering::Relaxed) { ::core::hint::spin_loop(); }
+        while STEP_FOR_BURSTS.load(Ordering::Relaxed) == 0 { ::core::hint::spin_loop(); }
+
+        if STEP_FOR_BURSTS.load(Ordering::Relaxed) != -1 {
+            STEP_FOR_BURSTS.fetch_sub(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -189,31 +215,12 @@ fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
             let (_stream, st_handle) = rodio::OutputStream::try_default().unwrap();
             let sink = rodio::Sink::try_new(&st_handle).unwrap();
 
-            // let mut wav = Vec::<u8>::new();
-            // wav.extend(b"RIFF");
-            // let file_size_idx = wav.len();
-            // wav.extend(0_u32.to_le_bytes());
-            // wav.extend(b"WAVE");
-            // wav.extend(b"fmt ");
-            // wav.extend(16_u32.to_le_bytes());
-            // wav.extend(1_u16.to_le_bytes());
-            // wav.extend(2_u16.to_le_bytes());
-            // wav.extend((gb::apu::SAMPLE_RATE as u32).to_le_bytes());
-            // wav.extend((gb::apu::SAMPLE_RATE as u32 * 16 * 2 / 8).to_le_bytes());
-            // wav.extend(4_u16.to_le_bytes());
-            // wav.extend(16_u16.to_le_bytes());
-            // wav.extend(b"data");
-            // let data_size_idx = wav.len();
-            // wav.extend(0_u32.to_le_bytes());
-
             let mut gb = gb::Gameboy::new(mapper, br, gb_fb, Box::new(|buf| {
                 if sink.len() > 3 {
                     for _ in 0..sink.len() { sink.skip_one(); }
                 }
 
                 sink.append(rodio::buffer::SamplesBuffer::new(2, gb::apu::SAMPLE_RATE as u32, buf));
-
-                // wav.extend(buf.iter().flat_map(|v| v.to_le_bytes()));
             }), keys);
 
             if let Ok(sav) = std::fs::read(&save_file) {
@@ -222,11 +229,6 @@ fn init(args: &args::Args) -> (Arc<Mutex<[u8]>>, Arc<AtomicU8>) {
             }
 
             run_emu(gb, save_file);
-
-            // let wav_len = wav.len();
-            // wav[file_size_idx..file_size_idx + 4].copy_from_slice(&(wav_len as u32).to_le_bytes());
-            // wav[data_size_idx..data_size_idx + 4].copy_from_slice(&((wav_len - data_size_idx - 4) as u32).to_le_bytes());
-            // std::fs::write("audio.wav", wav).unwrap();
         });
     }
 
