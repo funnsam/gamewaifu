@@ -182,8 +182,12 @@ impl Ppu {
                     &self.obp,
                 );
 
+                if self.ly == 8 { eprintln!("{} {:?}", self.scanline_dot - 80, self.fetcher); }
                 if (self.fetcher.sprite_mode.is_none()) && self.fetcher.next_sprite_mode.is_none() {
+                    if self.ly == 8 { eprintln!("k"); }
+
                     if let Some(bg) = self.fetcher.bg_fifo.pop() {
+                        if self.ly == 8 { eprintln!("k"); }
                         let ob = self.fetcher.obj_fifo.pop();
 
                         if self.fetcher.discard_counter == 0 {
@@ -203,6 +207,7 @@ impl Ppu {
 
                             for o in self.m2_objs[..self.m2_objc].iter() {
                                 if self.fetcher.lx + 8 == o.1 {
+                                    eprintln!("s");
                                     self.fetcher.next_sprite_mode = Some(o.clone());
                                     break;
                                 }
@@ -336,7 +341,6 @@ impl PixelFetcher {
         match &mut self.state {
             FetcherState::GetTile => {
                 self.state_counter = 1;
-                self.sprite_mode = core::mem::take(&mut self.next_sprite_mode);
 
                 let tilemap = if (lcdc & 8 != 0 && !self.in_window) || (lcdc & 0x40 != 0 && self.in_window) { 0x1c00 } else { 0x1800 };
 
@@ -426,6 +430,8 @@ impl PixelFetcher {
 
                     self.state = FetcherState::GetTile;
                 }
+
+                self.sprite_mode = core::mem::take(&mut self.next_sprite_mode);
             },
         }
     }
