@@ -1,5 +1,6 @@
 - fix pocket.gb checkerboard flashing white
 - accurate stop and halt
 - replace scanline ppu with t-cycle ppu (https://github.com/mattcurrie/mealybug-tearoom-tests)
+    - fix my sprites https://github.com/Atem2069/accurateboy/blob/b794816ce92d282ff4adc0b47aca32275bc85935/accurateboy/PPU.cpp#L252
     - v/h flip
     - add windows back

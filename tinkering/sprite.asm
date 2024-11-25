@@ -57,12 +57,6 @@ ClearOam:
     jp nz, ClearOam
 
     ; Set up OAM
-    ; NOTE: Bad x pairs:
-    ; 2, 3
-    ; 3, 4
-    ; 4, 5
-    ; 5, 6
-
     ld hl, _OAMRAM
     ld a, 8 + 16
     ld [hli], a
@@ -80,6 +74,10 @@ ClearOam:
     ld [hli], a
     ld a, $10
     ld [hli], a
+
+    ; Set up tile map
+    ld hl, $9833 + 32
+    inc [hl]
 
     ; Set palettes
     ld a, $e4
